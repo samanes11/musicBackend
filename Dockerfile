@@ -2,13 +2,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# نصب dependencies
 COPY package*.json ./
-RUN npm ci --only=production
 
-# کپی source و build
+# همه dependency ها رو نصب کن (شامل devDependencies برای build)
+RUN npm ci
+
 COPY . .
+
+# build
 RUN npm run build
+
+# بعد از build، devDependencies رو پاک کن
+RUN npm prune --production
 
 EXPOSE 3000
 
