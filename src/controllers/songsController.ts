@@ -15,7 +15,7 @@ export const getSongs = async (req: Request, res: Response, next: NextFunction) 
     let query: any = {};
 
     if (channelDbId) {
-      query.channelDbId = channelDbId;
+      query.channelDbId = channelDbId as string;
     } else {
       // آهنگ‌های تمام کانال‌های کاربر
       const userChannels = await db
@@ -23,11 +23,32 @@ export const getSongs = async (req: Request, res: Response, next: NextFunction) 
         .find({ userId: userId.toString() })
         .toArray();
 
+      console.log(`[getSongs] userId=${userId}, found ${userChannels.length} channels`);
+
       if (userChannels.length === 0) {
         return res.json({ success: true, data: [], total: 0, page: pageNum, totalPages: 0, hasMore: false });
       }
 
       const channelIds = userChannels.map((ch) => ch._id.toString());
+      console.log(`[getSongs] channelIds:`, channelIds);
+
+      // چک کن چند تا آهنگ با این channelDbId ها داریم
+      const totalCheck = await db.collection("telegram_songs").countDocuments({
+        channelDbId: { $in: channelIds },
+      });
+      console.log(`[getSongs] songs matching channelIds: ${totalCheck}`);
+
+      // اگه هیچ آهنگی پیدا نشد، همه آهنگ‌ها رو لاگ کن
+      if (totalCheck === 0) {
+        const sampleSongs = await db.collection("telegram_songs").find({}).limit(3).toArray();
+        console.log(`[getSongs] Sample songs in DB:`, sampleSongs.map(s => ({
+          title: s.title,
+          channelDbId: s.channelDbId,
+          channelDbIdType: typeof s.channelDbId,
+        })));
+        console.log(`[getSongs] channelIds types:`, channelIds.map(id => ({ id, type: typeof id })));
+      }
+
       query.channelDbId = { $in: channelIds };
     }
 
@@ -43,6 +64,8 @@ export const getSongs = async (req: Request, res: Response, next: NextFunction) 
     else if (sortBy === "artist") sortOption = { artist: 1 };
 
     const total = await db.collection("telegram_songs").countDocuments(query);
+    console.log(`[getSongs] total songs found: ${total}`);
+
     const songs = await db
       .collection("telegram_songs")
       .find(query)
@@ -61,5 +84,8 @@ export const getSongs = async (req: Request, res: Response, next: NextFunction) 
       totalPages,
       hasMore: pageNum < totalPages,
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    console.error("[getSongs] Error:", error);
+    next(error);
+  }
 };
