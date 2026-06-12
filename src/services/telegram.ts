@@ -111,40 +111,6 @@ class TelegramService {
     return this.client;
   }
 
-  // ── Extract audio info from a document ──────────────────────
-  private _extractAudioInfo(doc: any, msg: any, username: string): AudioFile | null {
-    const attributes = doc.attributes || [];
-    let title = "Unknown";
-    let artist = "Unknown";
-    let duration = 0;
-
-    for (const attr of attributes) {
-      if (attr.className === "DocumentAttributeAudio") {
-        title = attr.title || "Unknown";
-        artist = attr.performer || "Unknown";
-        duration = attr.duration || 0;
-      }
-      // اگه AudioAttribute نداشت، از اسم فایل title بساز
-      if (attr.className === "DocumentAttributeFilename" && title === "Unknown") {
-        const fname: string = attr.fileName || "";
-        title = fname.replace(/\.[^.]+$/, ""); // حذف extension
-      }
-    }
-
-    return {
-      messageId: msg.id,
-      title,
-      artist,
-      duration,
-      fileId: doc.id.toString(),
-      fileSize: doc.size,
-      mimeType: doc.mimeType,
-      messageDate: msg.date,
-      fileUrl: `https://t.me/${username}/${msg.id}`,
-      thumbnail: null,
-    };
-  }
-
   private async getDocumentThumbnail(doc: any, channelUsername: string, messageId: number): Promise<string | null> {
     try {
       if (!doc.thumbs || doc.thumbs.length === 0) return null;
@@ -190,7 +156,6 @@ class TelegramService {
     }
   }
 
-  // ── Get channel audio files (dual filter) ───────────────────
   async getChannelAudioFiles(
     channelUsername: string,
     userId?: any,
@@ -202,65 +167,59 @@ class TelegramService {
       const entity = await this.client!.getEntity(username);
 
       const audioFiles: AudioFile[] = [];
-      const seenIds = new Set<number>();
+      let offsetId = 0;
+      let hasMore = true;
 
-      // دو pass: Music filter + Document filter
-      // Music filter: فایل‌هایی که به عنوان موزیک آپلود شدن
-      // Document filter: فایل‌هایی که به عنوان document آپلود شدن ولی audio هستن
-      const filters = [
-        new Api.InputMessagesFilterMusic(),
-        new Api.InputMessagesFilterDocument(),
-      ];
+      console.log(`🔄 Starting ${lastMessageId > 0 ? "incremental" : "full"} sync for ${username}...`);
 
-      for (const filter of filters) {
-        let offsetId = 0;
-        let hasMore = true;
+      while (hasMore) {
+        const messages = await this.client!.getMessages(entity, {
+          limit: 100,
+          offsetId,
+          filter: new Api.InputMessagesFilterMusic(),
+        });
 
-        const filterName = filter.className || "unknown";
-        console.log(`🔄 [${filterName}] Syncing ${username} (lastMsgId=${lastMessageId})...`);
+        if (messages.length === 0) { hasMore = false; break; }
 
-        while (hasMore) {
-          const messages = await this.client!.getMessages(entity, {
-            limit: 100,
-            offsetId,
-            filter,
+        for (const msg of messages) {
+          if (lastMessageId > 0 && msg.id <= lastMessageId) {
+            hasMore = false;
+            break;
+          }
+          if (!msg.media || msg.media.className !== "MessageMediaDocument") continue;
+
+          const doc = (msg.media as any).document;
+          const attributes = doc.attributes || [];
+          let title = "Unknown", artist = "Unknown", duration = 0;
+
+          attributes.forEach((attr: any) => {
+            if (attr.className === "DocumentAttributeAudio") {
+              title = attr.title || "Unknown";
+              artist = attr.performer || "Unknown";
+              duration = attr.duration || 0;
+            }
           });
 
-          if (messages.length === 0) { hasMore = false; break; }
-
-          for (const msg of messages) {
-            if (lastMessageId > 0 && msg.id <= lastMessageId) {
-              hasMore = false;
-              break;
-            }
-
-            if (!msg.media || msg.media.className !== "MessageMediaDocument") continue;
-            if (seenIds.has(msg.id)) continue;
-
-            const doc = (msg.media as any).document;
-            const mimeType: string = doc.mimeType || "";
-
-            // فقط audio files
-            if (!mimeType.startsWith("audio/")) continue;
-
-            const result = this._extractAudioInfo(doc, msg, username);
-            if (result) {
-              seenIds.add(msg.id);
-              audioFiles.push(result);
-            }
-          }
-
-          if (!hasMore) break;
-          offsetId = messages[messages.length - 1].id;
+          audioFiles.push({
+            messageId: msg.id,
+            title, artist, duration,
+            fileId: doc.id.toString(),
+            fileSize: doc.size,
+            mimeType: doc.mimeType,
+            messageDate: msg.date,
+            fileUrl: `https://t.me/${username}/${msg.id}`,
+            thumbnail: null,
+          });
         }
 
-        console.log(`✅ [${filterName}] Found ${seenIds.size} total so far`);
+        if (!hasMore) break;
+        offsetId = messages[messages.length - 1].id;
       }
 
-      console.log(`🎵 Total: ${audioFiles.length} audio files from ${username}`);
+      console.log(`✅ Fetched ${audioFiles.length} audio files from ${username}`);
       return { success: true, files: audioFiles };
     } catch (error: any) {
-      console.error("Telegram getChannelAudioFiles Error:", error);
+      console.error("Telegram Error:", error);
       return { success: false, error: error.message || "Unknown error" };
     }
   }
