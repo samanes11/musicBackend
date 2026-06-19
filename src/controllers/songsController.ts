@@ -46,14 +46,17 @@ export const getSongs = async (
     /* ── search ── */
     let sort: Record<string, any> = { messageDate: -1 };
 
-    if (search && (search as string).trim()) {
-      const q = (search as string).trim();
+    function escapeRegex(str: string) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
-      query.$or = [
-        { title: { $regex: q, $options: "i" } },
-        { artist: { $regex: q, $options: "i" } },
-      ];
-    }
+if (search && (search as string).trim()) {
+  const safe = escapeRegex((search as string).trim());
+  query.$or = [
+    { title: { $regex: safe, $options: "i" } },
+    { artist: { $regex: safe, $options: "i" } },
+  ];
+}
 
     /* ── projection — skip heavy thumbnail field when listing ── */
     const projection: Record<string, any> = search
