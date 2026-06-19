@@ -362,3 +362,54 @@ async function _syncInBackground(
     }
   });
 }
+
+// ── Reusable helper: add + background-sync a channel for a given userId ──
+// Used by: registration flow (default channels) and admin "apply to all" action.
+export async function addChannelForUser(
+  userId: string,
+  channelUsername: string,
+  channelName: string,
+  db: any
+): Promise<{ added: boolean; channelDbId?: string; reason?: string }> {
+  try {
+    const username = channelUsername.replace("@", "");
+
+    const exists = await db.collection("telegram_channels").findOne({
+      userId: userId.toString(),
+      channelUsername: username,
+    });
+    if (exists) return { added: false, reason: "already exists" };
+
+    let photoUrl: string | null = null;
+    try {
+      photoUrl = await telegramService.getChannelPhoto(username, userId);
+    } catch (_) {}
+
+    const newChannel = {
+      userId: userId.toString(),
+      channelUsername: username,
+      channelName,
+      photoUrl,
+      status: "pending",
+      songsCount: 0,
+      addedAt: new Date(),
+      isDefault: true, // مشخص می‌کنه این چنل از طریق سیستم پیش‌فرض اضافه شده
+    };
+
+    const result = await db.collection("telegram_channels").insertOne(newChannel);
+    const channelDbId = result.insertedId.toString();
+
+    // Background sync — همون تابع موجود در همین فایل
+    _syncInBackground(channelDbId, username, userId, db).catch((err) => {
+      console.error(`Background sync failed for ${username}:`, err);
+      db.collection("telegram_channels")
+        .updateOne({ _id: result.insertedId }, { $set: { status: "error" } })
+        .catch(() => {});
+    });
+
+    return { added: true, channelDbId };
+  } catch (err) {
+    console.error("addChannelForUser failed:", err);
+    return { added: false, reason: "error" };
+  }
+}

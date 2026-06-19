@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import User from "../models/User";
 import { generateAuthTokens, verifyToken } from "../utils/jwt";
+import { applyDefaultChannelsForNewUser } from "./defaultChannelsController";
 
 export const register = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -18,6 +19,8 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
       message: "User registered successfully",
       data: { user: user.toPublicJSON(), accessToken, refreshToken },
     });
+
+    applyDefaultChannelsForNewUser(user._id).catch(console.error);
   } catch (error) { next(error); }
 };
 

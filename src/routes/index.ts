@@ -12,7 +12,7 @@ import {
   getUserChannels, addChannel, removeChannel,
   syncChannel, getSyncStatus,
 } from "../controllers/channelsController";
-import { getSongs } from "../controllers/songsController";
+import { getSongById, getSongs } from "../controllers/songsController";
 import { getFavorites, toggleFavorite } from "../controllers/favoritesController";
 import {
   getPlaylists, createPlaylist, deletePlaylist,
@@ -24,6 +24,10 @@ import {
 } from "../controllers/streamController";
 import { getUserDownloads, startDownload, deleteDownload } from "../controllers/downloadsController";
 import { getProxy, setProxy, testProxy } from "../controllers/proxyController";
+import { adminAuth } from "../middleware/adminAuth";
+import {
+  getDefaultChannels, addDefaultChannel, removeDefaultChannel, applyDefaultChannelsToAllUsers,
+} from "../controllers/defaultChannelsController";
 
 const router = Router();
 
@@ -36,6 +40,12 @@ router.put("/auth/profile", authenticate, updateProfileValidation, updateProfile
 router.put("/auth/password", authenticate, updatePasswordValidation, updatePassword);
 router.post("/auth/logout", authenticate, logout);
 
+// ── Admin: Default Channels ─────────────────────────────────────
+router.get("/admin/default-channels", adminAuth, getDefaultChannels);
+router.post("/admin/default-channels", adminAuth, addDefaultChannel);
+router.delete("/admin/default-channels/:id", adminAuth, removeDefaultChannel);
+router.post("/admin/default-channels/apply-all", adminAuth, applyDefaultChannelsToAllUsers);
+
 // ── Channels ────────────────────────────────────────────────────
 router.get("/channels", authenticate, getUserChannels);
 router.post("/channels", authenticate, addChannel);
@@ -45,6 +55,7 @@ router.get("/channels/:id/sync-status", authenticate, getSyncStatus); // ← NEW
 
 // ── Songs ───────────────────────────────────────────────────────
 router.get("/songs", authenticate, getSongs);
+router.get("/songs/:id", authenticate, getSongById);
 
 // ── Favorites ───────────────────────────────────────────────────
 router.get("/favorites", authenticate, getFavorites);

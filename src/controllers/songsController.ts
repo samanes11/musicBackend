@@ -63,3 +63,28 @@ export const getSongs = async (req: Request, res: Response, next: NextFunction) 
     });
   } catch (error) { next(error); }
 };
+
+// ── GET /api/songs/:id ─────────────────────────────────────────
+export const getSongById = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const { id } = req.params;
+    const db = mongoose.connection.db;
+
+    let song;
+    try {
+      song = await db.collection("telegram_songs").findOne({ _id: new mongoose.Types.ObjectId(id) });
+    } catch {
+      return res.status(400).json({ success: false, message: "Invalid song id" });
+    }
+    if (!song) return res.status(404).json({ success: false, message: "Song not found" });
+
+    const owns = await db.collection("telegram_channels").findOne({
+      _id: new mongoose.Types.ObjectId(song.channelDbId),
+      userId,
+    });
+    if (!owns) return res.status(404).json({ success: false, message: "Song not found" });
+
+    res.json({ success: true, data: song });
+  } catch (error) { next(error); }
+};

@@ -1,6 +1,16 @@
+# dependencies
 node_modules/
+
+# build outputs
 dist/
+
+# env files
 .env
-*.log
-.DS_Store
 .env.local
+.env*.local
+
+# logs
+*.log
+
+# system files
+.DS_Store
