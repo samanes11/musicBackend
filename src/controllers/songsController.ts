@@ -48,10 +48,11 @@ export const getSongs = async (
     else if (sortBy === "artist") sort = { artist: 1 };
 
     if (search && (search as string).trim()) {
-      const safe = escapeRegex((search as string).trim());
+      const q = (search as string).trim();
+
       query.$or = [
-        { title: { $regex: safe, $options: "i" } },
-        { artist: { $regex: safe, $options: "i" } },
+        { title: { $regex: q, $options: "i" } },
+        { artist: { $regex: q, $options: "i" } },
       ];
     }
 
