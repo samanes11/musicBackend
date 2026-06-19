@@ -5,7 +5,6 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// ── GET /api/songs ─────────────────────────────────────────────
 export const getSongs = async (
   req: Request,
   res: Response,
@@ -39,7 +38,6 @@ export const getSongs = async (
           hasMore: false,
         });
       }
-
       query.channelDbId = { $in: userChannels.map((ch) => ch._id.toString()) };
     }
 
@@ -48,11 +46,11 @@ export const getSongs = async (
     else if (sortBy === "artist") sort = { artist: 1 };
 
     if (search && (search as string).trim()) {
-      const q = (search as string).trim();
-
+      const safe = escapeRegex((search as string).trim());
+      const pattern = `\\b${safe}`;
       query.$or = [
-        { title: { $regex: q, $options: "i" } },
-        { artist: { $regex: q, $options: "i" } },
+        { title: { $regex: pattern, $options: "i" } },
+        { artist: { $regex: pattern, $options: "i" } },
       ];
     }
 
