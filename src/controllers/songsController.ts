@@ -5,6 +5,12 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function buildWholeWordPattern(term: string): string {
+  const safe = escapeRegex(term.trim());
+  const sep = "[\\s\\-_,.\\(\\)\\[\\]'\"!?:;/\\\\،؛؟»«]";
+  return `(^|${sep})${safe}($|${sep})`;
+}
+
 export const getSongs = async (
   req: Request,
   res: Response,
@@ -38,6 +44,7 @@ export const getSongs = async (
           hasMore: false,
         });
       }
+
       query.channelDbId = { $in: userChannels.map((ch) => ch._id.toString()) };
     }
 
@@ -46,8 +53,7 @@ export const getSongs = async (
     else if (sortBy === "artist") sort = { artist: 1 };
 
     if (search && (search as string).trim()) {
-      const safe = escapeRegex((search as string).trim());
-      const pattern = `\\b${safe}`;
+      const pattern = buildWholeWordPattern(search as string);
       query.$or = [
         { title: { $regex: pattern, $options: "i" } },
         { artist: { $regex: pattern, $options: "i" } },
