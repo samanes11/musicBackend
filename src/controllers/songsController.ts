@@ -70,13 +70,13 @@ export const getSongs = async (
     else if (sortBy === "artist") sort = { artist: 1 };
 
     if (search && (search as string).trim()) {
-  const safeSearch = escapeRegex(search as string);
+      const safeSearch = escapeRegex(search as string);
 
-  query.$or = [
-    { title: { $regex: safeSearch, $options: "i" } },
-    { artist: { $regex: safeSearch, $options: "i" } },
-  ];
-}
+      query.$or = [
+        { title: { $regex: safeSearch, $options: "i" } },
+        { artist: { $regex: safeSearch, $options: "i" } },
+      ];
+    }
 
     const [total, songs] = await Promise.all([
       db.collection("songs").countDocuments(query),
