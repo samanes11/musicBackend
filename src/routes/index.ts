@@ -21,6 +21,7 @@ import {
   removeChannel,
   syncChannel,
   getSyncStatus,
+  _syncInBackground,
 } from "../controllers/channelsController";
 import { getSongById, getSongs } from "../controllers/songsController";
 import {
@@ -55,6 +56,7 @@ import {
   cancelForwarder,
   listForwarderJobs,
 } from "../controllers/forwarderController";
+import mongoose from "mongoose";
 
 const router = Router();
 
@@ -97,6 +99,44 @@ router.post("/channels", authenticate, addChannel);
 router.delete("/channels/:username", authenticate, removeChannel);
 router.post("/channels/:username/sync", authenticate, syncChannel);
 router.get("/channels/:username/sync-status", authenticate, getSyncStatus);
+
+// ── Admin: Sync Channel ─────────────────────────────────────────
+router.post(
+  "/admin/channels/:username/sync",
+  adminAuth,
+  async (req, res, next) => {
+    try {
+      const { username } = req.params;
+      const db = mongoose.connection.db;
+
+      const channel = await db.collection("channels").findOne({
+        channelUsername: username,
+      });
+
+      if (channel?.status === "syncing") {
+        return res.json({ success: true, msg: "Already syncing" });
+      }
+
+      await db
+        .collection("channels")
+        .updateOne(
+          { channelUsername: username },
+          { $set: { status: "syncing" } },
+        );
+
+      res.json({ success: true, msg: "Sync started" });
+
+      const userChannel = await db.collection("user_channels").findOne({
+        channelUsername: username,
+      });
+      const userId = userChannel?.userId ?? "";
+
+      _syncInBackground(username, userId, db).catch(console.error);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 // ── Songs ───────────────────────────────────────────────────────
 router.get("/songs", authenticate, getSongs);

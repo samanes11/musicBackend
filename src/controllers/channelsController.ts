@@ -219,7 +219,7 @@ export const getSyncStatus = async (req, res, next) => {
 };
 
 // ── Background sync ────────────────────────────────────────────
-async function _syncInBackground(
+export async function _syncInBackground(
   username: string,
   userId: any,
   db: any,
