@@ -8,6 +8,7 @@ import {
   logout,
   refreshToken,
 } from "../controllers/authController";
+import { sendMessage, getMessages } from "../controllers/contactController";
 import {
   registerValidation,
   loginValidation,
@@ -93,6 +94,9 @@ router.get("/admin/forwarder/jobs", adminAuth, listForwarderJobs);
 router.get("/admin/forwarder/status/:jobId", adminAuth, getForwarderStatus);
 router.post("/admin/forwarder/cancel/:jobId", adminAuth, cancelForwarder);
 
+// ── Admin: Messages ──────────────────────────────────────────────
+router.get("/admin/messages", adminAuth, getMessages);
+
 // ── Channels ────────────────────────────────────────────────────
 router.get("/channels", authenticate, getUserChannels);
 router.post("/channels", authenticate, addChannel);
@@ -164,6 +168,9 @@ router.get("/stream/token/:songId", authenticate, issueStreamToken);
 router.get("/stream/admin/stats", authenticate, getCacheStats);
 router.post("/stream", authenticate, streamSong);
 router.get("/stream/:token", streamByToken);
+
+// ── Contact ─────────────────────────────────────────────────────
+router.post("/contact", authenticate, sendMessage);
 
 // ── Downloads ───────────────────────────────────────────────────
 router.get("/downloads/check/:fileId", authenticate, checkServerCache);
