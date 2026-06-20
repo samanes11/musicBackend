@@ -224,8 +224,6 @@ async function _syncInBackground(
   userId: any,
   db: any,
 ): Promise<void> {
-  console.log(`🚀 [sync] Starting for ${username}`);
-
   const latestSong = await db
     .collection("songs")
     .find({ channelUsername: username })
@@ -299,6 +297,30 @@ async function _syncInBackground(
   );
 
   console.log(`✅ [sync] Done for ${username}: ${totalSongs} total`);
+  // thumbnail download با delay
+  const thumbLimit = Math.min(result.files.length, 30);
+  setImmediate(async () => {
+    for (let i = 0; i < thumbLimit; i++) {
+      const file = result.files![i];
+      if (file.thumbnail && file.thumbnail !== DEFAULT_COVER_URL) continue;
+      try {
+        const thumbnail = await telegramService.downloadSongThumbnail(
+          username,
+          file.messageId,
+          userId,
+        );
+        if (thumbnail) {
+          await db
+            .collection("songs")
+            .updateOne(
+              { channelUsername: username, messageId: file.messageId },
+              { $set: { thumbnail } },
+            );
+        }
+      } catch (_) {}
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  });
 }
 
 // ── Reusable helper ────────────────────────────────────────────
