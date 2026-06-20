@@ -30,11 +30,15 @@ export interface AudioFile {
   thumbnail?: string | null;
 }
 
+export interface StreamDownloadHandle {
+  totalSize: number;
+  chunks: AsyncGenerator<Buffer, void, unknown>;
+}
+
 class TelegramService {
   private client: TelegramClient | null = null;
   private currentProxyConfig: ProxySettings | null = null;
 
-  // ── proxy از users.proxy می‌خونه (نه collection جدا) ──────────
   private async getProxySettings(userId: any): Promise<ProxySettings | null> {
     try {
       const db = mongoose.connection.db;
@@ -42,7 +46,7 @@ class TelegramService {
         .collection("users")
         .findOne(
           { _id: new mongoose.Types.ObjectId(userId.toString()) },
-          { projection: { proxy: 1 } }
+          { projection: { proxy: 1 } },
         );
       return user?.proxy ?? null;
     } catch (error) {
@@ -80,7 +84,9 @@ class TelegramService {
   }
 
   private hasProxyChanged(newSettings: ProxySettings | null): boolean {
-    return JSON.stringify(this.currentProxyConfig) !== JSON.stringify(newSettings);
+    return (
+      JSON.stringify(this.currentProxyConfig) !== JSON.stringify(newSettings)
+    );
   }
 
   async initialize(userId?: any): Promise<TelegramClient> {
@@ -91,7 +97,9 @@ class TelegramService {
     }
 
     if (this.client) {
-      try { await this.client.disconnect(); } catch {}
+      try {
+        await this.client.disconnect();
+      } catch {}
       this.client = null;
     }
 
@@ -123,7 +131,7 @@ class TelegramService {
   private async getDocumentThumbnail(
     doc: any,
     channelUsername: string,
-    messageId: number
+    messageId: number,
   ): Promise<string | null> {
     try {
       if (!doc.thumbs || doc.thumbs.length === 0) return null;
@@ -156,9 +164,14 @@ class TelegramService {
       try {
         const username = channelUsername.replace("@", "");
         const entity = await this.client!.getEntity(username);
-        const messages = await this.client!.getMessages(entity, { ids: messageId });
+        const messages = await this.client!.getMessages(entity, {
+          ids: messageId,
+        });
         if (messages[0] && messages[0].media) {
-          const buffer = (await this.client!.downloadMedia(messages[0].media, {})) as Buffer;
+          const buffer = (await this.client!.downloadMedia(
+            messages[0].media,
+            {},
+          )) as Buffer;
           if (buffer && buffer.length > 0) {
             return `data:image/jpeg;base64,${buffer.toString("base64")}`;
           }
@@ -177,7 +190,7 @@ class TelegramService {
   async getChannelAudioFiles(
     channelUsername: string,
     userId?: any,
-    lastMessageId: number = 0
+    lastMessageId: number = 0,
   ): Promise<{ success: boolean; files?: AudioFile[]; error?: string }> {
     try {
       await this.initialize(userId);
@@ -188,7 +201,9 @@ class TelegramService {
       let offsetId = 0;
       let reachedEnd = false;
 
-      console.log(`🔄 Starting ${lastMessageId > 0 ? "incremental" : "full"} sync for ${username}...`);
+      console.log(
+        `🔄 Starting ${lastMessageId > 0 ? "incremental" : "full"} sync for ${username}...`,
+      );
 
       while (!reachedEnd) {
         const messages = await this.client!.getMessages(entity, {
@@ -197,7 +212,10 @@ class TelegramService {
           filter: new Api.InputMessagesFilterMusic(),
         });
 
-        if (messages.length === 0) { reachedEnd = true; break; }
+        if (messages.length === 0) {
+          reachedEnd = true;
+          break;
+        }
 
         for (const msg of messages) {
           if (lastMessageId > 0 && msg.id <= lastMessageId) {
@@ -205,7 +223,8 @@ class TelegramService {
             break;
           }
 
-          if (!msg.media || msg.media.className !== "MessageMediaDocument") continue;
+          if (!msg.media || msg.media.className !== "MessageMediaDocument")
+            continue;
           const doc = (msg.media as any).document;
           if (!doc) continue;
 
@@ -216,23 +235,23 @@ class TelegramService {
 
           for (const attr of attributes) {
             if (attr.className === "DocumentAttributeAudio") {
-              title    = attr.title     || "Unknown";
-              artist   = attr.performer || "Unknown";
-              duration = attr.duration  || 0;
+              title = attr.title || "Unknown";
+              artist = attr.performer || "Unknown";
+              duration = attr.duration || 0;
             }
           }
 
           audioFiles.push({
-            messageId:   msg.id,
+            messageId: msg.id,
             title,
             artist,
             duration,
-            fileId:      doc.id.toString(),
-            fileSize:    Number(doc.size) || 0,
-            mimeType:    doc.mimeType || "audio/mpeg",
+            fileId: doc.id.toString(),
+            fileSize: Number(doc.size) || 0,
+            mimeType: doc.mimeType || "audio/mpeg",
             messageDate: msg.date,
-            fileUrl:     `https://t.me/${username}/${msg.id}`,
-            thumbnail:   null,
+            fileUrl: `https://t.me/${username}/${msg.id}`,
+            thumbnail: null,
           });
         }
 
@@ -241,7 +260,9 @@ class TelegramService {
         await new Promise((r) => setTimeout(r, 300));
       }
 
-      console.log(`✅ Fetched ${audioFiles.length} audio files from ${username}`);
+      console.log(
+        `✅ Fetched ${audioFiles.length} audio files from ${username}`,
+      );
       return { success: true, files: audioFiles };
     } catch (error: any) {
       console.error("Telegram Error:", error);
@@ -254,13 +275,15 @@ class TelegramService {
     channelUsername: string,
     messageId: number,
     userId?: any,
-    onProgress?: (progress: number, downloaded: number, total: number) => void
+    onProgress?: (progress: number, downloaded: number, total: number) => void,
   ): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
     try {
       await this.initialize(userId);
       const username = channelUsername.replace("@", "");
-      const entity   = await this.client!.getEntity(username);
-      const message  = await this.client!.getMessages(entity, { ids: messageId });
+      const entity = await this.client!.getEntity(username);
+      const message = await this.client!.getMessages(entity, {
+        ids: messageId,
+      });
 
       if (!message[0] || !message[0].media) {
         return { success: false, error: "File not found" };
@@ -268,7 +291,8 @@ class TelegramService {
 
       const buffer = (await this.client!.downloadMedia(message[0].media, {
         progressCallback: (downloaded: any, total: any) => {
-          const d = Number(downloaded), t = Number(total);
+          const d = Number(downloaded),
+            t = Number(total);
           if (t > 0 && onProgress) onProgress(Math.round((d / t) * 100), d, t);
         },
       })) as Buffer;
@@ -279,7 +303,41 @@ class TelegramService {
     }
   }
 
-  async testConnection(userId?: any): Promise<{ success: boolean; msg: string }> {
+  async prepareStreamDownload(
+    fileId: string,
+    channelUsername: string,
+    messageId: number,
+    userId?: any,
+  ): Promise<StreamDownloadHandle> {
+    await this.initialize(userId);
+    const username = channelUsername.replace("@", "");
+    const entity = await this.client!.getEntity(username);
+    const messages = await this.client!.getMessages(entity, { ids: messageId });
+
+    if (!messages[0] || !messages[0].media) {
+      throw new Error("File not found");
+    }
+
+    const media = messages[0].media as any;
+    const doc = media.document;
+    const totalSize = doc ? Number(doc.size) : 0;
+    const client = this.client!;
+
+    async function* chunkGenerator() {
+      for await (const chunk of client.iterDownload({
+        file: media,
+        requestSize: 512 * 1024,
+      })) {
+        yield chunk as Buffer;
+      }
+    }
+
+    return { totalSize, chunks: chunkGenerator() };
+  }
+
+  async testConnection(
+    userId?: any,
+  ): Promise<{ success: boolean; msg: string }> {
     try {
       await this.initialize(userId);
       await this.client!.getMe();
@@ -289,13 +347,18 @@ class TelegramService {
     }
   }
 
-  async getChannelPhoto(channelUsername: string, userId?: any): Promise<string | null> {
+  async getChannelPhoto(
+    channelUsername: string,
+    userId?: any,
+  ): Promise<string | null> {
     try {
       await this.initialize(userId);
       const username = channelUsername.replace("@", "");
-      const entity   = await this.client!.getEntity(username);
+      const entity = await this.client!.getEntity(username);
       if ((entity as any).photo) {
-        const buffer = (await this.client!.downloadProfilePhoto(entity)) as Buffer;
+        const buffer = (await this.client!.downloadProfilePhoto(
+          entity,
+        )) as Buffer;
         if (buffer && buffer.length > 0) {
           return `data:image/jpeg;base64,${buffer.toString("base64")}`;
         }
@@ -310,13 +373,15 @@ class TelegramService {
   async downloadSongThumbnail(
     channelUsername: string,
     messageId: number,
-    userId?: any
+    userId?: any,
   ): Promise<string | null> {
     try {
       await this.initialize(userId);
       const username = channelUsername.replace("@", "");
-      const entity   = await this.client!.getEntity(username);
-      const messages = await this.client!.getMessages(entity, { ids: messageId });
+      const entity = await this.client!.getEntity(username);
+      const messages = await this.client!.getMessages(entity, {
+        ids: messageId,
+      });
       if (!messages[0] || !messages[0].media) return null;
       const doc = (messages[0].media as any).document;
       if (!doc) return null;
@@ -329,7 +394,9 @@ class TelegramService {
 
   async disconnect(): Promise<void> {
     if (this.client) {
-      try { await this.client.disconnect(); } catch {}
+      try {
+        await this.client.disconnect();
+      } catch {}
       this.client = null;
       this.currentProxyConfig = null;
     }
