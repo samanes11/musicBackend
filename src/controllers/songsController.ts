@@ -27,10 +27,9 @@ export const getSongs = async (
     const query: Record<string, any> = {};
 
     if (channelDbId) {
-      // چک کن یوزر این چنل رو داره
       const hasChannel = await db.collection("user_channels").findOne({
         userId: userId.toString(),
-        channelUsername: channelDbId, // الان channelUsername میفرستیم از flutter
+        channelUsername: channelDbId,
       });
       if (!hasChannel) {
         return res.json({
@@ -71,12 +70,13 @@ export const getSongs = async (
     else if (sortBy === "artist") sort = { artist: 1 };
 
     if (search && (search as string).trim()) {
-      const pattern = buildWholeWordPattern(search as string);
-      query.$or = [
-        { title: { $regex: pattern, $options: "i" } },
-        { artist: { $regex: pattern, $options: "i" } },
-      ];
-    }
+  const safeSearch = escapeRegex(search as string);
+
+  query.$or = [
+    { title: { $regex: safeSearch, $options: "i" } },
+    { artist: { $regex: safeSearch, $options: "i" } },
+  ];
+}
 
     const [total, songs] = await Promise.all([
       db.collection("songs").countDocuments(query),
