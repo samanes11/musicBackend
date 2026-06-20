@@ -1,49 +1,63 @@
 import { Request, Response, NextFunction } from "express";
-import mongoose from "mongoose";
-import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import fs from "fs";
 import path from "path";
 import telegramService from "../services/telegram";
+import mongoose from "mongoose";
 
 const DEFAULT_COVER_URL =
   "https://cdn.qepal.com/qeupload/6759d578be4c8e9471a45c81/download22jpg-ghyhvjsfacjurgu04sjd2zog0rzk1e.jpg";
 
-// ── Local disk cache ───────────────────────────────────────────
-// Audio files are cached on the server filesystem, NOT in MongoDB.
-// MongoDB audio_cache collection is no longer used for audio blobs.
-// Path: AUDIO_CACHE_DIR/<fileId>.mp3
-// ──────────────────────────────────────────────────────────────
+// ── Disk cache ─────────────────────────────────────────────────
+const AUDIO_CACHE_DIR =
+  process.env.AUDIO_CACHE_DIR || path.join(process.cwd(), "audio_cache");
 
-const AUDIO_CACHE_DIR = process.env.AUDIO_CACHE_DIR || path.join(process.cwd(), "audio_cache");
-
-// Ensure cache directory exists on startup
 if (!fs.existsSync(AUDIO_CACHE_DIR)) {
   fs.mkdirSync(AUDIO_CACHE_DIR, { recursive: true });
   console.log(`📁 Audio cache directory created: ${AUDIO_CACHE_DIR}`);
 }
 
 function getCachePath(fileId: string): string {
-  // Sanitise fileId — only allow alphanumeric + dash/underscore
   const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "_");
   return path.join(AUDIO_CACHE_DIR, `${safe}.mp3`);
 }
 
 function isCached(fileId: string): boolean {
-  const p = getCachePath(fileId);
   try {
-    const stat = fs.statSync(p);
-    return stat.size > 0;
+    return fs.statSync(getCachePath(fileId)).size > 0;
   } catch {
     return false;
   }
 }
 
+// ── JWT stream token (بدون DB) ─────────────────────────────────
+const STREAM_SECRET = process.env.STREAM_TOKEN_SECRET || process.env.JWT_SECRET!;
+
+interface StreamTokenPayload {
+  fileId:          string;
+  channelUsername: string;
+  messageId:       number;
+  userId:          string;
+}
+
+function signStreamToken(payload: StreamTokenPayload): string {
+  return jwt.sign(payload, STREAM_SECRET, { expiresIn: "1h" });
+}
+
+function verifyStreamToken(token: string): StreamTokenPayload | null {
+  try {
+    return jwt.verify(token, STREAM_SECRET) as StreamTokenPayload;
+  } catch {
+    return null;
+  }
+}
+
 // ── POST /api/stream ───────────────────────────────────────────
-// Downloads audio from Telegram (or serves from local disk cache),
-// then streams it back to the Flutter client as chunked HTTP.
-// The client (Flutter) is responsible for persisting the file locally.
-// ──────────────────────────────────────────────────────────────
-export const streamSong = async (req: Request, res: Response, next: NextFunction) => {
+export const streamSong = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const userId = (req as any).user.id.toString();
     const { fileId, channelUsername, messageId, songId } = req.body;
@@ -56,35 +70,21 @@ export const streamSong = async (req: Request, res: Response, next: NextFunction
     }
 
     const db = mongoose.connection.db;
-    const cachePath = getCachePath(fileId);
     let audioBuffer: Buffer;
     let isFromCache = false;
 
-    // ── 1. Check disk cache ────────────────────────────────────
+    // ── 1. disk cache ──────────────────────────────────────────
     if (isCached(fileId)) {
       console.log(`✅ [stream] Serving from disk cache: ${fileId}`);
-      audioBuffer = fs.readFileSync(cachePath);
+      audioBuffer = fs.readFileSync(getCachePath(fileId));
       isFromCache = true;
     } else {
-      // ── 2. Download from Telegram ────────────────────────────
+      // ── 2. download from Telegram ────────────────────────────
       console.log(`📥 [stream] Downloading from Telegram: ${fileId}`);
 
-      // Fire thumbnail download in background (non-blocking)
-      let songData: any = null;
+      // thumbnail در background (non-blocking)
       if (songId) {
-        try {
-          songData = await db
-            .collection("telegram_songs")
-            .findOne({ _id: new mongoose.Types.ObjectId(songId) });
-        } catch (_) {}
-      }
-
-      if (
-        songId &&
-        songData &&
-        (!songData.thumbnail || songData.thumbnail === DEFAULT_COVER_URL)
-      ) {
-        _downloadThumbnailBg(songData, songId, userId, db).catch(console.error);
+        _downloadThumbnailBg(songId, userId, db).catch(console.error);
       }
 
       const result = await telegramService.downloadFile(
@@ -103,74 +103,36 @@ export const streamSong = async (req: Request, res: Response, next: NextFunction
 
       audioBuffer = result.buffer;
 
-      // ── 3. Persist to disk cache ─────────────────────────────
+      // ── 3. persist to disk ───────────────────────────────────
       try {
-        fs.writeFileSync(cachePath, audioBuffer);
-        console.log(
-          `💾 [stream] Cached to disk: ${fileId} (${_fmtBytes(audioBuffer.length)})`
-        );
+        fs.writeFileSync(getCachePath(fileId), audioBuffer);
+        console.log(`💾 [stream] Cached: ${fileId} (${_fmtBytes(audioBuffer.length)})`);
       } catch (err) {
-        // Non-fatal: serve the audio even if we can't cache it
-        console.error(`⚠️  [stream] Could not write to disk cache:`, err);
+        console.error(`⚠️  Could not write to disk cache:`, err);
       }
     }
 
-    // ── 4. Update song download record (lightweight, no blob) ──
-    if (songId) {
-      db.collection("user_downloads")
-        .updateOne(
-          { userId, songId },
-          {
-            $set: {
-              userId,
-              songId,
-              fileId,
-              status: "completed",
-              progress: 100,
-              fileSize: audioBuffer.length,
-              completedAt: new Date(),
-              error: null,
-              // No cacheId — we no longer store blobs in Mongo
-              diskCached: true,
-            },
-            $setOnInsert: { startedAt: new Date() },
-          },
-          { upsert: true }
-        )
-        .catch(console.error);
-    }
+    // ── 4. JWT stream token (بدون DB) ─────────────────────────
+    const token = signStreamToken({
+      fileId,
+      channelUsername,
+      messageId: parseInt(messageId),
+      userId,
+    });
 
-    // ── 5. Issue a short-lived stream token (for GET endpoint) ─
-    const token = crypto.randomBytes(32).toString("hex");
-    const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    db.collection("stream_tokens")
-      .insertOne({
-        token,
-        fileId,
-        channelUsername,
-        messageId: parseInt(messageId),
-        userId,
-        createdAt: new Date(),
-        expiresAt: tokenExpiresAt,
-      })
-      .catch(console.error);
-
-    // ── 6. Stream to client ────────────────────────────────────
-    // We send the raw audio bytes. The Flutter client should save
-    // this to local storage to avoid re-downloading next time.
-    const contentLength = audioBuffer.length;
-
+    // ── 5. stream to client ────────────────────────────────────
     res.set({
-      "Content-Type": "audio/mpeg",
-      "Content-Length": contentLength.toString(),
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store",
-      "X-Cached": isFromCache ? "true" : "false",
-      "X-File-Size": contentLength.toString(),
+      "Content-Type":   "audio/mpeg",
+      "Content-Length": audioBuffer.length.toString(),
+      "Accept-Ranges":  "bytes",
+      "Cache-Control":  "no-store",
+      "X-Cached":       isFromCache ? "true" : "false",
+      "X-File-Size":    audioBuffer.length.toString(),
       "X-Stream-Token": token,
-      "X-Stream-Url": `/api/stream/${token}`,
-      "X-Expires-At": tokenExpiresAt.toISOString(),
+      "X-Stream-Url":   `/api/stream/${token}`,
+      "X-Expires-At":   expiresAt.toISOString(),
     });
 
     res.send(audioBuffer);
@@ -180,9 +142,6 @@ export const streamSong = async (req: Request, res: Response, next: NextFunction
 };
 
 // ── GET /api/stream/:token ─────────────────────────────────────
-// Token-based streaming — client can use this URL directly with
-// just_audio's setUrl() for seekable playback.
-// ──────────────────────────────────────────────────────────────
 export const streamByToken = async (
   req: Request,
   res: Response,
@@ -190,60 +149,44 @@ export const streamByToken = async (
 ) => {
   try {
     const { token } = req.params;
-    const db = mongoose.connection.db;
 
-    const tokenDoc = await db.collection("stream_tokens").findOne({
-      token,
-      expiresAt: { $gt: new Date() },
-    });
-
-    if (!tokenDoc) {
-      return res
-        .status(404)
-        .json({ success: false, msg: "Token expired or not found" });
+    // verify JWT — بدون DB lookup
+    const payload = verifyStreamToken(token);
+    if (!payload) {
+      return res.status(404).json({ success: false, msg: "Token expired or invalid" });
     }
 
-    const cachePath = getCachePath(tokenDoc.fileId);
-
-    if (!isCached(tokenDoc.fileId)) {
-      return res
-        .status(404)
-        .json({ success: false, msg: "Audio not in disk cache" });
+    if (!isCached(payload.fileId)) {
+      return res.status(404).json({ success: false, msg: "Audio not in disk cache" });
     }
 
-    const stat = fs.statSync(cachePath);
-    const fileSize = stat.size;
+    const cachePath = getCachePath(payload.fileId);
+    const fileSize  = fs.statSync(cachePath).size;
     const rangeHeader = req.headers.range;
 
     if (rangeHeader) {
-      // ── Range request (seekable playback) ───────────────────
       const parts = rangeHeader.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const start     = parseInt(parts[0], 10);
+      const end       = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
       const chunkSize = end - start + 1;
 
       res.set({
-        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-        "Accept-Ranges": "bytes",
+        "Content-Range":  `bytes ${start}-${end}/${fileSize}`,
+        "Accept-Ranges":  "bytes",
         "Content-Length": chunkSize.toString(),
-        "Content-Type": "audio/mpeg",
-        "Cache-Control": "no-store",
+        "Content-Type":   "audio/mpeg",
+        "Cache-Control":  "no-store",
       });
       res.status(206);
-
-      const stream = fs.createReadStream(cachePath, { start, end });
-      stream.pipe(res);
+      fs.createReadStream(cachePath, { start, end }).pipe(res);
     } else {
-      // ── Full file ────────────────────────────────────────────
       res.set({
-        "Content-Type": "audio/mpeg",
+        "Content-Type":   "audio/mpeg",
         "Content-Length": fileSize.toString(),
-        "Accept-Ranges": "bytes",
-        "Cache-Control": "no-store",
+        "Accept-Ranges":  "bytes",
+        "Cache-Control":  "no-store",
       });
-
-      const stream = fs.createReadStream(cachePath);
-      stream.pipe(res);
+      fs.createReadStream(cachePath).pipe(res);
     }
   } catch (error) {
     next(error);
@@ -251,9 +194,6 @@ export const streamByToken = async (
 };
 
 // ── GET /api/stream/check/:fileId ──────────────────────────────
-// Lightweight check: is this file on disk cache?
-// Flutter calls this before deciding to download.
-// ──────────────────────────────────────────────────────────────
 export const checkDiskCache = async (
   req: Request,
   res: Response,
@@ -264,9 +204,7 @@ export const checkDiskCache = async (
     const cached = isCached(fileId);
     let size = 0;
     if (cached) {
-      try {
-        size = fs.statSync(getCachePath(fileId)).size;
-      } catch (_) {}
+      try { size = fs.statSync(getCachePath(fileId)).size; } catch {}
     }
     res.json({ success: true, cached, size });
   } catch (error) {
@@ -274,17 +212,14 @@ export const checkDiskCache = async (
   }
 };
 
-// ── GET /api/stream/token-url/:songId ─────────────────────────
-// Issue a fresh stream token for a song that's already disk-cached.
-// Flutter uses the returned URL directly with just_audio setUrl().
-// ──────────────────────────────────────────────────────────────
+// ── GET /api/stream/token/:songId ──────────────────────────────
 export const issueStreamToken = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const userId = (req as any).user.id.toString();
+    const userId  = (req as any).user.id.toString();
     const { songId } = req.params;
     const db = mongoose.connection.db;
 
@@ -299,34 +234,25 @@ export const issueStreamToken = async (
     if (!isCached(song.fileId)) {
       return res.status(404).json({
         success: false,
-        msg: "Audio not cached on server — use POST /api/stream to download first",
+        msg: "Audio not cached — use POST /api/stream first",
       });
     }
 
-    const token = crypto.randomBytes(32).toString("hex");
+    const token     = signStreamToken({
+      fileId:          song.fileId,
+      channelUsername: song.channelUsername,
+      messageId:       song.messageId,
+      userId,
+    });
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    await db.collection("stream_tokens").insertOne({
-      token,
-      fileId: song.fileId,
-      channelUsername: song.channelUsername,
-      messageId: song.messageId,
-      userId,
-      createdAt: new Date(),
-      expiresAt,
-    });
-
-    res.json({
-      success: true,
-      streamUrl: `/api/stream/${token}`,
-      expiresAt,
-    });
+    res.json({ success: true, streamUrl: `/api/stream/${token}`, expiresAt });
   } catch (error) {
     next(error);
   }
 };
 
-// ── Admin: cache stats ─────────────────────────────────────────
+// ── GET /api/stream/admin/stats ────────────────────────────────
 export const getCacheStats = async (
   req: Request,
   res: Response,
@@ -337,15 +263,14 @@ export const getCacheStats = async (
     let fileCount = 0;
 
     try {
-      const files = fs.readdirSync(AUDIO_CACHE_DIR);
-      for (const f of files) {
+      for (const f of fs.readdirSync(AUDIO_CACHE_DIR)) {
         if (!f.endsWith(".mp3")) continue;
         try {
           totalSize += fs.statSync(path.join(AUDIO_CACHE_DIR, f)).size;
           fileCount++;
-        } catch (_) {}
+        } catch {}
       }
-    } catch (_) {}
+    } catch {}
 
     res.json({
       success: true,
@@ -362,37 +287,29 @@ export const getCacheStats = async (
 };
 
 // ── Helpers ────────────────────────────────────────────────────
-
 async function _downloadThumbnailBg(
-  song: any,
   songId: string,
   userId: string,
   db: any
 ): Promise<void> {
   try {
+    const song = await db
+      .collection("telegram_songs")
+      .findOne({ _id: new mongoose.Types.ObjectId(songId) });
+
+    if (!song || (song.thumbnail && song.thumbnail !== DEFAULT_COVER_URL)) return;
+
     const thumbnail = await telegramService.downloadSongThumbnail(
       song.channelUsername,
       song.messageId,
       userId
     );
-    if (thumbnail) {
-      await db
-        .collection("telegram_songs")
-        .updateOne(
-          { _id: new mongoose.Types.ObjectId(songId) },
-          { $set: { thumbnail } }
-        );
-    }
-  } catch {
-    try {
-      await db
-        .collection("telegram_songs")
-        .updateOne(
-          { _id: new mongoose.Types.ObjectId(songId) },
-          { $set: { thumbnail: DEFAULT_COVER_URL } }
-        );
-    } catch (_) {}
-  }
+
+    await db.collection("telegram_songs").updateOne(
+      { _id: new mongoose.Types.ObjectId(songId) },
+      { $set: { thumbnail: thumbnail || DEFAULT_COVER_URL } }
+    );
+  } catch {}
 }
 
 function _fmtBytes(b: number): string {

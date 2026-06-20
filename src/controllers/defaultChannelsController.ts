@@ -1,110 +1,122 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
-import User from "../models/User";
 import { addChannelForUser } from "./channelsController";
 
-// ── GET /api/admin/default-channels ────────────────────────────
-export const getDefaultChannels = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const db = mongoose.connection.db;
-    const list = await db
-      .collection("default_channels")
-      .find()
-      .sort({ addedAt: -1 })
-      .toArray();
-    res.json({ success: true, data: list });
-  } catch (error) { next(error); }
-};
+// ── Default channels از env یا فایل می‌خونه (نه DB) ───────────
+//
+// در .env بذار:
+// DEFAULT_CHANNELS='[{"username":"music_channel","name":"Music Channel"}]'
+//
+// یا فایل default_channels.json در root پروژه
 
-// ── POST /api/admin/default-channels ───────────────────────────
-export const addDefaultChannel = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { channelUsername, channelName } = req.body;
-    if (!channelUsername || !channelName) {
-      return res.status(400).json({ success: false, msg: "channelUsername and channelName required" });
+function getDefaultChannels(): Array<{ username: string; name: string }> {
+  // اول env رو چک کن
+  if (process.env.DEFAULT_CHANNELS) {
+    try {
+      return JSON.parse(process.env.DEFAULT_CHANNELS);
+    } catch (e) {
+      console.error("❌ DEFAULT_CHANNELS env var is not valid JSON:", e);
     }
+  }
 
-    const db = mongoose.connection.db;
-    const username = channelUsername.replace("@", "");
-
-    const exists = await db.collection("default_channels").findOne({ channelUsername: username });
-    if (exists) {
-      return res.status(400).json({ success: false, msg: "This channel is already a default channel" });
-    }
-
-    const doc = {
-      channelUsername: username,
-      channelName,
-      addedAt: new Date(),
-    };
-    const result = await db.collection("default_channels").insertOne(doc);
-
-    res.status(201).json({
-      success: true,
-      msg: "Default channel added",
-      data: { _id: result.insertedId, ...doc },
-    });
-  } catch (error) { next(error); }
-};
-
-// ── DELETE /api/admin/default-channels/:id ─────────────────────
-// نکته: این فقط از لیست پیش‌فرض‌ها حذفش می‌کنه؛ چنلی که قبلاً برای
-// کاربرها sync شده، دستی پاک نمیشه (که درسته — نباید زیر پای کاربر خالی شه)
-export const removeDefaultChannel = async (req: Request, res: Response, next: NextFunction) => {
+  // بعد فایل رو چک کن
   try {
-    const db = mongoose.connection.db;
-    const result = await db
-      .collection("default_channels")
-      .deleteOne({ _id: new mongoose.Types.ObjectId(req.params.id) });
-
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ success: false, msg: "Default channel not found" });
+    const fs   = require("fs");
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "default_channels.json");
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, "utf-8"));
     }
-    res.json({ success: true, msg: "Default channel removed" });
-  } catch (error) { next(error); }
-};
+  } catch (e) {
+    console.error("❌ Could not read default_channels.json:", e);
+  }
+
+  return [];
+}
 
 // ── POST /api/admin/default-channels/apply-all ─────────────────
-// چنل‌های پیش‌فرض رو به همه‌ی کاربرهای *موجود* که هنوز ندارنش اضافه می‌کنه.
-export const applyDefaultChannelsToAllUsers = async (req: Request, res: Response, next: NextFunction) => {
+// چنل‌های پیش‌فرض رو به همه کاربرهای موجود که هنوز ندارن اضافه می‌کنه
+export const applyDefaultChannelsToAllUsers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const db = mongoose.connection.db;
-    const defaults = await db.collection("default_channels").find().toArray();
+    const defaults = getDefaultChannels();
+
     if (defaults.length === 0) {
-      return res.json({ success: true, msg: "No default channels configured", added: 0, usersProcessed: 0 });
+      return res.json({
+        success: true,
+        msg: "No default channels configured",
+        added: 0,
+        usersProcessed: 0,
+      });
     }
 
-    const users = await User.find({ isActive: true }).select("_id");
+    const db    = mongoose.connection.db;
+    const users = await db
+      .collection("users")
+      .find({ isActive: true })
+      .project({ _id: 1 })
+      .toArray();
 
     let added = 0;
     for (const user of users) {
       const userId = user._id.toString();
+
       const existingChannels = await db
         .collection("telegram_channels")
         .find({ userId })
+        .project({ channelUsername: 1 })
         .toArray();
-      const existingUsernames = new Set(existingChannels.map((c: any) => c.channelUsername));
+
+      const existingUsernames = new Set(
+        existingChannels.map((c: any) => c.channelUsername)
+      );
 
       for (const dc of defaults) {
-        if (existingUsernames.has(dc.channelUsername)) continue;
-        const result = await addChannelForUser(userId, dc.channelUsername, dc.channelName, db);
+        if (existingUsernames.has(dc.username)) continue;
+        const result = await addChannelForUser(userId, dc.username, dc.name, db);
         if (result.added) added++;
       }
     }
 
-    res.json({ success: true, msg: "Applied default channels", added, usersProcessed: users.length });
-  } catch (error) { next(error); }
+    res.json({
+      success: true,
+      msg: "Applied default channels",
+      added,
+      usersProcessed: users.length,
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
-// ── Internal helper: called right after a new user registers ──
+// ── Internal helper: بعد از register هر کاربر جدید صدا زده میشه ──
 export async function applyDefaultChannelsForNewUser(userId: any): Promise<void> {
   try {
-    const db = mongoose.connection.db;
-    const defaults = await db.collection("default_channels").find().toArray();
+    const db       = mongoose.connection.db;
+    const defaults = getDefaultChannels();
+
     for (const dc of defaults) {
-      await addChannelForUser(userId.toString(), dc.channelUsername, dc.channelName, db);
+      await addChannelForUser(userId.toString(), dc.username, dc.name, db);
     }
   } catch (err) {
     console.error("applyDefaultChannelsForNewUser failed:", err);
   }
 }
+
+// ── GET /api/admin/default-channels ────────────────────────────
+// فقط برای نمایش در admin panel — از config می‌خونه
+export const listDefaultChannels = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const channels = getDefaultChannels();
+    res.json({ success: true, data: channels });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -22,68 +22,70 @@ import {
   streamSong, streamByToken, checkDiskCache,
   issueStreamToken, getCacheStats,
 } from "../controllers/streamController";
-import { getUserDownloads, startDownload, deleteDownload } from "../controllers/downloadsController";
+import { checkServerCache } from "../controllers/downloadsController";
 import { getProxy, setProxy, testProxy } from "../controllers/proxyController";
 import { adminAuth } from "../middleware/adminAuth";
 import {
-  getDefaultChannels, addDefaultChannel, removeDefaultChannel, applyDefaultChannelsToAllUsers,
+  listDefaultChannels,
+  applyDefaultChannelsToAllUsers,
 } from "../controllers/defaultChannelsController";
 
 const router = Router();
 
 // ── Auth ────────────────────────────────────────────────────────
 router.post("/auth/register", registerValidation, register);
-router.post("/auth/login", loginValidation, login);
-router.post("/auth/refresh", refreshToken);
-router.get("/auth/me", authenticate, getMe);
-router.put("/auth/profile", authenticate, updateProfileValidation, updateProfile);
-router.put("/auth/password", authenticate, updatePasswordValidation, updatePassword);
-router.post("/auth/logout", authenticate, logout);
+router.post("/auth/login",    loginValidation,    login);
+router.post("/auth/refresh",  refreshToken);
+router.get ("/auth/me",       authenticate, getMe);
+router.put ("/auth/profile",  authenticate, updateProfileValidation,  updateProfile);
+router.put ("/auth/password", authenticate, updatePasswordValidation, updatePassword);
+router.post("/auth/logout",   authenticate, logout);
 
-// ── Admin: Default Channels ─────────────────────────────────────
-router.get("/admin/default-channels", adminAuth, getDefaultChannels);
-router.post("/admin/default-channels", adminAuth, addDefaultChannel);
-router.delete("/admin/default-channels/:id", adminAuth, removeDefaultChannel);
+// ── Admin: Default Channels (از config می‌خونه، نه DB) ─────────
+router.get ("/admin/default-channels",           adminAuth, listDefaultChannels);
 router.post("/admin/default-channels/apply-all", adminAuth, applyDefaultChannelsToAllUsers);
+// ❌ حذف شد: POST /admin/default-channels     (حالا از config/env مدیریت میشه)
+// ❌ حذف شد: DELETE /admin/default-channels/:id
 
 // ── Channels ────────────────────────────────────────────────────
-router.get("/channels", authenticate, getUserChannels);
-router.post("/channels", authenticate, addChannel);
-router.delete("/channels/:id", authenticate, removeChannel);
-router.post("/channels/:id/sync", authenticate, syncChannel);
-router.get("/channels/:id/sync-status", authenticate, getSyncStatus); // ← NEW
+router.get   ("/channels",          authenticate, getUserChannels);
+router.post  ("/channels",          authenticate, addChannel);
+router.delete("/channels/:id",      authenticate, removeChannel);
+router.post  ("/channels/:id/sync", authenticate, syncChannel);
+router.get   ("/channels/:id/sync-status", authenticate, getSyncStatus);
 
 // ── Songs ───────────────────────────────────────────────────────
-router.get("/songs", authenticate, getSongs);
+router.get("/songs",     authenticate, getSongs);
 router.get("/songs/:id", authenticate, getSongById);
 
 // ── Favorites ───────────────────────────────────────────────────
-router.get("/favorites", authenticate, getFavorites);
+router.get ("/favorites",        authenticate, getFavorites);
 router.post("/favorites/toggle", authenticate, toggleFavorite);
 
 // ── Playlists ───────────────────────────────────────────────────
-router.get("/playlists", authenticate, getPlaylists);
-router.post("/playlists", authenticate, createPlaylist);
-router.delete("/playlists/:id", authenticate, deletePlaylist);
-router.get("/playlists/:id/songs", authenticate, getPlaylistSongs);
-router.post("/playlists/:id/songs", authenticate, addSongToPlaylist);
-router.delete("/playlists/:id/songs/:songId", authenticate, removeSongFromPlaylist);
+router.get   ("/playlists",                    authenticate, getPlaylists);
+router.post  ("/playlists",                    authenticate, createPlaylist);
+router.delete("/playlists/:id",                authenticate, deletePlaylist);
+router.get   ("/playlists/:id/songs",          authenticate, getPlaylistSongs);
+router.post  ("/playlists/:id/songs",          authenticate, addSongToPlaylist);
+router.delete("/playlists/:id/songs/:songId",  authenticate, removeSongFromPlaylist);
 
 // ── Stream ──────────────────────────────────────────────────────
-router.get("/stream/check/:fileId", authenticate, checkDiskCache);
-router.get("/stream/token/:songId", authenticate, issueStreamToken);
-router.get("/stream/admin/stats", authenticate, getCacheStats);
-router.post("/stream", authenticate, streamSong);
-router.get("/stream/:token", streamByToken);
+router.get ("/stream/check/:fileId",   authenticate, checkDiskCache);
+router.get ("/stream/token/:songId",   authenticate, issueStreamToken);
+router.get ("/stream/admin/stats",     authenticate, getCacheStats);
+router.post("/stream",                 authenticate, streamSong);
+router.get ("/stream/:token",          streamByToken);       // ← بدون auth (JWT خودش verify میشه)
 
-// ── Downloads ───────────────────────────────────────────────────
-router.get("/downloads", authenticate, getUserDownloads);
-router.post("/downloads/start", authenticate, startDownload);
-router.delete("/downloads/:id", authenticate, deleteDownload);
+// ── Downloads (فقط check روی سرور) ─────────────────────────────
+router.get("/downloads/check/:fileId", authenticate, checkServerCache);
+// ❌ حذف شد: GET    /downloads          (لیست از DB)
+// ❌ حذف شد: POST   /downloads/start    (شروع دانلود از سرور)
+// ❌ حذف شد: DELETE /downloads/:id      (حذف رکورد از DB)
 
-// ── Proxy ───────────────────────────────────────────────────────
-router.get("/proxy", authenticate, getProxy);
-router.post("/proxy", authenticate, setProxy);
+// ── Proxy (embed در users) ──────────────────────────────────────
+router.get ("/proxy",      authenticate, getProxy);
+router.post("/proxy",      authenticate, setProxy);
 router.post("/proxy/test", authenticate, testProxy);
 
 export default router;
