@@ -204,13 +204,21 @@ export const getSyncStatus = async (req, res, next) => {
       .collection("channels")
       .findOne(
         { channelUsername: username },
-        { projection: { status: 1, songsCount: 1, lastSync: 1 } },
+        {
+          projection: {
+            status: 1,
+            songsCount: 1,
+            totalEstimate: 1,
+            lastSync: 1,
+          },
+        },
       );
 
     res.json({
       success: true,
       status: channel?.status ?? "pending",
       songsCount: channel?.songsCount ?? 0,
+      totalEstimate: channel?.totalEstimate ?? 0,
       lastSync: channel?.lastSync ?? null,
     });
   } catch (error) {
@@ -234,23 +242,19 @@ export async function _syncInBackground(
 
   const lastMessageId = latestSong[0]?.messageId ?? 0;
 
+  // ریست شمارنده‌ها قبل از شروع
+  await db
+    .collection("channels")
+    .updateOne(
+      { channelUsername: username },
+      { $set: { status: "syncing", totalEstimate: 0 } },
+    );
+
   const result = await telegramService.getChannelAudioFiles(
     username,
     userId,
     lastMessageId,
-  );
-
-  if (!result.success || !result.files) {
-    await db
-      .collection("channels")
-      .updateOne({ channelUsername: username }, { $set: { status: "error" } });
-    return;
-  }
-
-  if (result.files.length > 0) {
-    const BATCH = 100;
-    for (let i = 0; i < result.files.length; i += BATCH) {
-      const batch = result.files.slice(i, i + BATCH);
+    async (batch, totalEstimate) => {
       const bulkOps = batch.map((file) => ({
         updateOne: {
           filter: { channelUsername: username, messageId: file.messageId },
@@ -272,12 +276,30 @@ export async function _syncInBackground(
         },
       }));
       await db.collection("songs").bulkWrite(bulkOps, { ordered: false });
-    }
-  }
 
-  const totalSongs = await db
-    .collection("songs")
-    .countDocuments({ channelUsername: username });
+      const syncedCount = await db
+        .collection("songs")
+        .countDocuments({ channelUsername: username });
+
+      // ← آپدیت فوری بعد هر batch، نه در پایان
+      await db.collection("channels").updateOne(
+        { channelUsername: username },
+        {
+          $set: {
+            songsCount: syncedCount,
+            totalEstimate: totalEstimate || syncedCount,
+          },
+        },
+      );
+    },
+  );
+
+  if (!result.success || !result.files) {
+    await db
+      .collection("channels")
+      .updateOne({ channelUsername: username }, { $set: { status: "error" } });
+    return;
+  }
 
   let photoUrl: string | null = null;
   try {
@@ -289,15 +311,13 @@ export async function _syncInBackground(
     {
       $set: {
         status: "active",
-        songsCount: totalSongs,
         lastSync: new Date(),
         ...(photoUrl ? { photoUrl } : {}),
       },
     },
   );
 
-  console.log(`✅ [sync] Done for ${username}: ${totalSongs} total`);
-  // thumbnail download با delay
+  // ── thumbnail download همون قبلی، بدون تغییر ──
   const thumbLimit = Math.min(result.files.length, 30);
   setImmediate(async () => {
     for (let i = 0; i < thumbLimit; i++) {
