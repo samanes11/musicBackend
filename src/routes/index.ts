@@ -29,6 +29,12 @@ import {
   listDefaultChannels,
   applyDefaultChannelsToAllUsers,
 } from "../controllers/defaultChannelsController";
+import {
+  startForwarder,
+  getForwarderStatus,
+  cancelForwarder,
+  listForwarderJobs,
+} from "../controllers/forwarderController";
 
 const router = Router();
 
@@ -41,11 +47,15 @@ router.put ("/auth/profile",  authenticate, updateProfileValidation,  updateProf
 router.put ("/auth/password", authenticate, updatePasswordValidation, updatePassword);
 router.post("/auth/logout",   authenticate, logout);
 
-// ── Admin: Default Channels (از config می‌خونه، نه DB) ─────────
+// ── Admin: Default Channels ─────────────────────────────────────
 router.get ("/admin/default-channels",           adminAuth, listDefaultChannels);
 router.post("/admin/default-channels/apply-all", adminAuth, applyDefaultChannelsToAllUsers);
-// ❌ حذف شد: POST /admin/default-channels     (حالا از config/env مدیریت میشه)
-// ❌ حذف شد: DELETE /admin/default-channels/:id
+
+// ── Admin: Music Forwarder ──────────────────────────────────────
+router.post("/admin/forwarder/start",            adminAuth, startForwarder);
+router.get ("/admin/forwarder/jobs",             adminAuth, listForwarderJobs);
+router.get ("/admin/forwarder/status/:jobId",    adminAuth, getForwarderStatus);
+router.post("/admin/forwarder/cancel/:jobId",    adminAuth, cancelForwarder);
 
 // ── Channels ────────────────────────────────────────────────────
 router.get   ("/channels",          authenticate, getUserChannels);
@@ -75,15 +85,12 @@ router.get ("/stream/check/:fileId",   authenticate, checkDiskCache);
 router.get ("/stream/token/:songId",   authenticate, issueStreamToken);
 router.get ("/stream/admin/stats",     authenticate, getCacheStats);
 router.post("/stream",                 authenticate, streamSong);
-router.get ("/stream/:token",          streamByToken);       // ← بدون auth (JWT خودش verify میشه)
+router.get ("/stream/:token",          streamByToken);
 
-// ── Downloads (فقط check روی سرور) ─────────────────────────────
+// ── Downloads ───────────────────────────────────────────────────
 router.get("/downloads/check/:fileId", authenticate, checkServerCache);
-// ❌ حذف شد: GET    /downloads          (لیست از DB)
-// ❌ حذف شد: POST   /downloads/start    (شروع دانلود از سرور)
-// ❌ حذف شد: DELETE /downloads/:id      (حذف رکورد از DB)
 
-// ── Proxy (embed در users) ──────────────────────────────────────
+// ── Proxy ───────────────────────────────────────────────────────
 router.get ("/proxy",      authenticate, getProxy);
 router.post("/proxy",      authenticate, setProxy);
 router.post("/proxy/test", authenticate, testProxy);
