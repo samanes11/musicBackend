@@ -5,12 +5,6 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function buildWholeWordPattern(term: string): string {
-  const safe = escapeRegex(term.trim());
-  const sep = "[\\s\\-_,.\\(\\)\\[\\]'\"!?:;/\\\\،؛؟»«]";
-  return `(^|${sep})${safe}($|${sep})`;
-}
-
 export const getSongs = async (
   req: Request,
   res: Response,
@@ -144,7 +138,7 @@ export const getSongById = async (
         _id: new mongoose.Types.ObjectId(song.channelDbId),
         userId,
       },
-      { projection: { _id: 1 } }, // ← only need to know it exists
+      { projection: { _id: 1 } }, 
     );
     if (!owns)
       return res
