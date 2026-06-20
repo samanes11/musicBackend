@@ -27,11 +27,27 @@ export const getSongs = async (
     const query: Record<string, any> = {};
 
     if (channelDbId) {
-      query.channelDbId = channelDbId;
+      // چک کن یوزر این چنل رو داره
+      const hasChannel = await db.collection("user_channels").findOne({
+        userId: userId.toString(),
+        channelUsername: channelDbId, // الان channelUsername میفرستیم از flutter
+      });
+      if (!hasChannel) {
+        return res.json({
+          success: true,
+          data: [],
+          total: 0,
+          page: pageNum,
+          totalPages: 0,
+          hasMore: false,
+        });
+      }
+      query.channelUsername = channelDbId;
     } else {
       const userChannels = await db
-        .collection("telegram_channels")
-        .find({ userId: userId.toString() }, { projection: { _id: 1 } })
+        .collection("user_channels")
+        .find({ userId: userId.toString() })
+        .project({ channelUsername: 1 })
         .toArray();
 
       if (userChannels.length === 0) {
@@ -45,7 +61,9 @@ export const getSongs = async (
         });
       }
 
-      query.channelDbId = { $in: userChannels.map((ch) => ch._id.toString()) };
+      query.channelUsername = {
+        $in: userChannels.map((ch) => ch.channelUsername),
+      };
     }
 
     let sort: Record<string, any> = { messageDate: -1 };
@@ -61,9 +79,9 @@ export const getSongs = async (
     }
 
     const [total, songs] = await Promise.all([
-      db.collection("telegram_songs").countDocuments(query),
+      db.collection("songs").countDocuments(query),
       db
-        .collection("telegram_songs")
+        .collection("songs")
         .find(query)
         .sort(sort)
         .skip(skip)
@@ -106,7 +124,7 @@ export const getSongById = async (
         .json({ success: false, message: "Invalid song id" });
     }
 
-    const song = await db.collection("telegram_songs").findOne({ _id: objId });
+    const song = await db.collection("songs").findOne({ _id: objId });
     if (!song)
       return res
         .status(404)

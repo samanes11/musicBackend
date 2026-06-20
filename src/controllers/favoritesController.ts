@@ -35,7 +35,7 @@ export const getFavorites = async (
         // join song data
         {
           $lookup: {
-            from: "telegram_songs",
+            from: "songs",
             localField: "_songObjId",
             foreignField: "_id",
             as: "_song",

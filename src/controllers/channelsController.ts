@@ -6,151 +6,178 @@ const DEFAULT_COVER_URL =
   "https://cdn.qepal.com/qeupload/6759d578be4c8e9471a45c81/download22jpg-ghyhvjsfacjurgu04sjd2zog0rzk1e.jpg";
 
 // ── GET /api/channels ──────────────────────────────────────────
-export const getUserChannels = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const getUserChannels = async (req, res, next) => {
   try {
-    const userId = (req as any).user.id;
+    const userId = (req as any).user.id.toString();
+    const db = mongoose.connection.db;
 
-    const channels = await mongoose.connection.db
-      .collection("telegram_channels")
-      .find({ userId: userId.toString() })
-      .sort({ addedAt: -1 })
+    const result = await db
+      .collection("user_channels")
+      .aggregate([
+        { $match: { userId } },
+        { $sort: { addedAt: -1 } },
+        {
+          $lookup: {
+            from: "channels",
+            localField: "channelUsername",
+            foreignField: "channelUsername",
+            as: "channel",
+          },
+        },
+        {
+          $replaceRoot: {
+            newRoot: {
+              $mergeObjects: [
+                { $arrayElemAt: ["$channel", 0] },
+                { addedAt: "$addedAt", isDefault: "$isDefault" },
+              ],
+            },
+          },
+        },
+      ])
       .toArray();
 
-    res.json({ success: true, data: channels });
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
 };
 
 // ── POST /api/channels ─────────────────────────────────────────
-export const addChannel = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const addChannel = async (req, res, next) => {
   try {
-    const userId = (req as any).user.id;
+    const userId = (req as any).user.id.toString();
     const { channelUsername, channelName } = req.body;
     if (!channelUsername || !channelName) {
-      return res
-        .status(400)
-        .json({ success: false, msg: "channelUsername and channelName required" });
+      return res.status(400).json({
+        success: false,
+        msg: "channelUsername and channelName required",
+      });
     }
 
-    const db = mongoose.connection.db;
     const username = channelUsername.replace("@", "");
+    const db = mongoose.connection.db;
 
-    // unique index handles duplicates — but give a friendly message
-    const exists = await db.collection("telegram_channels").findOne({
-      userId: userId.toString(),
+    // چک کن یوزر قبلاً این چنل رو داره
+    const alreadyAdded = await db.collection("user_channels").findOne({
+      userId,
       channelUsername: username,
     });
-    if (exists)
-      return res.status(400).json({ success: false, msg: "Channel already added" });
+    if (alreadyAdded) {
+      return res
+        .status(400)
+        .json({ success: false, msg: "Channel already added" });
+    }
 
-    const photoUrl = await telegramService.getChannelPhoto(username, userId);
+    // چنل shared رو پیدا کن یا بساز
+    let channel = await db
+      .collection("channels")
+      .findOne({ channelUsername: username });
+    let needsSync = false;
 
-    const newChannel = {
-      userId: userId.toString(),
+    if (!channel) {
+      const photoUrl = await telegramService.getChannelPhoto(username, userId);
+      const result = await db.collection("channels").insertOne({
+        channelUsername: username,
+        channelName,
+        photoUrl,
+        songsCount: 0,
+        status: "pending",
+        lastSync: null,
+      });
+      channel = {
+        _id: result.insertedId,
+        channelUsername: username,
+        channelName,
+        status: "pending",
+        songsCount: 0,
+      };
+      needsSync = true;
+    }
+
+    // اضافه کن به user_channels
+    await db.collection("user_channels").insertOne({
+      userId,
       channelUsername: username,
-      channelName,
-      photoUrl,
-      status: "pending",
-      songsCount: 0,
       addedAt: new Date(),
-    };
-
-    const result = await db.collection("telegram_channels").insertOne(newChannel);
-    const channelDbId = result.insertedId.toString();
-
-    res.status(201).json({
-      success: true,
-      msg: "Channel added. Sync started in background.",
-      data: { _id: result.insertedId, ...newChannel },
+      isDefault: false,
     });
 
-    _syncInBackground(channelDbId, username, userId, db).catch((err) => {
-      console.error(`Background sync failed for ${username}:`, err);
-    });
+    res
+      .status(201)
+      .json({ success: true, msg: "Channel added.", data: channel });
+
+    // فقط اگه چنل جدیده sync کن
+    if (needsSync) {
+      _syncInBackground(username, userId, db).catch(console.error);
+    }
   } catch (error) {
     next(error);
   }
 };
 
 // ── DELETE /api/channels/:id ───────────────────────────────────
-export const removeChannel = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const removeChannel = async (req, res, next) => {
   try {
-    const userId = (req as any).user.id;
-    const channelDbId = req.params.id;
+    const userId = (req as any).user.id.toString();
+    const username = req.params.username;
     const db = mongoose.connection.db;
 
-    const channel = await db.collection("telegram_channels").findOne({
-      _id: new mongoose.Types.ObjectId(channelDbId),
-      userId: userId.toString(),
+    const result = await db.collection("user_channels").deleteOne({
+      userId,
+      channelUsername: username,
     });
-    if (!channel)
+
+    if (result.deletedCount === 0) {
       return res.status(404).json({ success: false, msg: "Channel not found" });
+    }
 
-    await db
-      .collection("telegram_channels")
-      .deleteOne({ _id: new mongoose.Types.ObjectId(channelDbId) });
-
-    // channelDbId stored as string in telegram_songs
-    await db.collection("telegram_songs").deleteMany({ channelDbId });
-
-    res.json({ success: true, msg: `Channel "${channel.channelName}" removed` });
+    res.json({ success: true, msg: "Channel removed" });
   } catch (error) {
     next(error);
   }
 };
 
 // ── POST /api/channels/:id/sync ────────────────────────────────
-export const syncChannel = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const syncChannel = async (req, res, next) => {
   try {
-    const userId = (req as any).user.id;
-    const channelDbId = req.params.id;
-    const { channelUsername, forceFullSync } = req.body;
+    const userId = (req as any).user.id.toString();
+    const { username } = req.params;
     const db = mongoose.connection.db;
 
-    const channel = await db.collection("telegram_channels").findOne({
-      _id: new mongoose.Types.ObjectId(channelDbId),
-      userId: userId.toString(),
+    // چک کن یوزر این چنل رو داره
+    const userChannel = await db.collection("user_channels").findOne({
+      userId,
+      channelUsername: username,
     });
-    if (!channel)
+    if (!userChannel) {
       return res.status(404).json({ success: false, msg: "Channel not found" });
-
-    if (channel.status === "syncing") {
-      return res.json({ success: true, syncing: true, msg: "Sync already in progress" });
     }
 
-    await db.collection("telegram_channels").updateOne(
-      { _id: new mongoose.Types.ObjectId(channelDbId) },
-      { $set: { status: "syncing" } }
-    );
+    const channel = await db
+      .collection("channels")
+      .findOne({ channelUsername: username });
+    if (channel?.status === "syncing") {
+      return res.json({
+        success: true,
+        syncing: true,
+        msg: "Sync already in progress",
+      });
+    }
 
-    const username = (channelUsername || channel.channelUsername || "").replace("@", "");
+    await db
+      .collection("channels")
+      .updateOne(
+        { channelUsername: username },
+        { $set: { status: "syncing" } },
+      );
 
     res.json({ success: true, syncing: true, msg: "Sync started." });
 
-    _syncInBackground(channelDbId, username, userId, db, forceFullSync).catch((err) => {
+    _syncInBackground(username, userId, db).catch((err) => {
       console.error(`Background sync failed for ${username}:`, err);
-      db.collection("telegram_channels")
-        .updateOne(
-          { _id: new mongoose.Types.ObjectId(channelDbId) },
-          { $set: { status: "error" } }
-        )
+      db.collection("channels")
+        .updateOne({ channelUsername: username }, { $set: { status: "error" } })
         .catch(() => {});
     });
   } catch (error) {
@@ -159,32 +186,32 @@ export const syncChannel = async (
 };
 
 // ── GET /api/channels/:id/sync-status ─────────────────────────
-export const getSyncStatus = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const getSyncStatus = async (req, res, next) => {
   try {
-    const userId = (req as any).user.id;
-    const channelDbId = req.params.id;
+    const userId = (req as any).user.id.toString();
+    const { username } = req.params;
     const db = mongoose.connection.db;
 
-    const channel = await db.collection("telegram_channels").findOne(
-      {
-        _id: new mongoose.Types.ObjectId(channelDbId),
-        userId: userId.toString(),
-      },
-      { projection: { status: 1, songsCount: 1, lastSync: 1 } }
-    );
-
-    if (!channel)
+    const userChannel = await db.collection("user_channels").findOne({
+      userId,
+      channelUsername: username,
+    });
+    if (!userChannel) {
       return res.status(404).json({ success: false, msg: "Channel not found" });
+    }
+
+    const channel = await db
+      .collection("channels")
+      .findOne(
+        { channelUsername: username },
+        { projection: { status: 1, songsCount: 1, lastSync: 1 } },
+      );
 
     res.json({
       success: true,
-      status: channel.status,
-      songsCount: channel.songsCount || 0,
-      lastSync: channel.lastSync || null,
+      status: channel?.status ?? "pending",
+      songsCount: channel?.songsCount ?? 0,
+      lastSync: channel?.lastSync ?? null,
     });
   } catch (error) {
     next(error);
@@ -193,46 +220,34 @@ export const getSyncStatus = async (
 
 // ── Background sync ────────────────────────────────────────────
 async function _syncInBackground(
-  channelDbId: string,
   username: string,
   userId: any,
   db: any,
-  forceFullSync: boolean = false
 ): Promise<void> {
-  console.log(`🚀 [bg-sync] Starting for ${username} (id=${channelDbId})`);
+  console.log(`🚀 [sync] Starting for ${username}`);
 
-  let lastMessageId = 0;
-  if (!forceFullSync) {
-    const latestSong = await db
-      .collection("telegram_songs")
-      .find({ channelDbId })
-      .sort({ messageId: -1 })
-      .limit(1)
-      .project({ messageId: 1 })        // ← فقط فیلد لازم
-      .toArray();
-    if (latestSong.length > 0) {
-      lastMessageId = latestSong[0].messageId;
-      console.log(`[bg-sync] Incremental from messageId=${lastMessageId}`);
-    }
-  }
+  const latestSong = await db
+    .collection("songs")
+    .find({ channelUsername: username })
+    .sort({ messageId: -1 })
+    .limit(1)
+    .project({ messageId: 1 })
+    .toArray();
 
-  if (forceFullSync) {
-    await db.collection("telegram_songs").deleteMany({ channelDbId });
-    console.log(`[bg-sync] Cleared songs for full sync`);
-  }
+  const lastMessageId = latestSong[0]?.messageId ?? 0;
 
-  const result = await telegramService.getChannelAudioFiles(username, userId, lastMessageId);
+  const result = await telegramService.getChannelAudioFiles(
+    username,
+    userId,
+    lastMessageId,
+  );
 
   if (!result.success || !result.files) {
-    await db.collection("telegram_channels").updateOne(
-      { _id: new mongoose.Types.ObjectId(channelDbId) },
-      { $set: { status: "error" } }
-    );
-    console.error(`[bg-sync] Failed for ${username}: ${result.error}`);
+    await db
+      .collection("channels")
+      .updateOne({ channelUsername: username }, { $set: { status: "error" } });
     return;
   }
-
-  console.log(`[bg-sync] Got ${result.files.length} new files for ${username}`);
 
   if (result.files.length > 0) {
     const BATCH = 100;
@@ -240,10 +255,9 @@ async function _syncInBackground(
       const batch = result.files.slice(i, i + BATCH);
       const bulkOps = batch.map((file) => ({
         updateOne: {
-          filter: { channelDbId, messageId: file.messageId },
+          filter: { channelUsername: username, messageId: file.messageId },
           update: {
             $set: {
-              channelDbId,
               channelUsername: username,
               title: file.title,
               artist: file.artist,
@@ -253,32 +267,27 @@ async function _syncInBackground(
               mimeType: file.mimeType,
               messageId: file.messageId,
               messageDate: new Date(file.messageDate * 1000),
-              fileUrl: file.fileUrl,
               thumbnail: file.thumbnail || DEFAULT_COVER_URL,
-              format: file.mimeType?.includes("mp3") ? "mp3" : "audio",
             },
           },
           upsert: true,
         },
       }));
-      await db.collection("telegram_songs").bulkWrite(bulkOps, { ordered: false });
-      console.log(
-        `[bg-sync] Batch ${Math.floor(i / BATCH) + 1}/${Math.ceil(result.files.length / BATCH)}`
-      );
+      await db.collection("songs").bulkWrite(bulkOps, { ordered: false });
     }
   }
 
   const totalSongs = await db
-    .collection("telegram_songs")
-    .countDocuments({ channelDbId });
+    .collection("songs")
+    .countDocuments({ channelUsername: username });
 
   let photoUrl: string | null = null;
   try {
     photoUrl = await telegramService.getChannelPhoto(username, userId);
   } catch (_) {}
 
-  await db.collection("telegram_channels").updateOne(
-    { _id: new mongoose.Types.ObjectId(channelDbId) },
+  await db.collection("channels").updateOne(
+    { channelUsername: username },
     {
       $set: {
         status: "active",
@@ -286,34 +295,10 @@ async function _syncInBackground(
         lastSync: new Date(),
         ...(photoUrl ? { photoUrl } : {}),
       },
-    }
+    },
   );
 
-  console.log(`✅ [bg-sync] Done for ${username}: ${totalSongs} total (${result.files.length} new)`);
-
-  // thumbnail download با delay — جلوگیری از rate limit
-  const thumbLimit = Math.min(result.files.length, 30);
-  setImmediate(async () => {
-    for (let i = 0; i < thumbLimit; i++) {
-      const file = result.files![i];
-      if (file.thumbnail && file.thumbnail !== DEFAULT_COVER_URL) continue;
-      try {
-        const thumbnail = await telegramService.downloadSongThumbnail(
-          username,
-          file.messageId,
-          userId
-        );
-        if (thumbnail) {
-          await db.collection("telegram_songs").updateOne(
-            { channelDbId, messageId: file.messageId },
-            { $set: { thumbnail } }
-          );
-        }
-      } catch (_) {}
-      // ✅ 200ms فاصله بین هر request به Telegram
-      await new Promise((r) => setTimeout(r, 200));
-    }
-  });
+  console.log(`✅ [sync] Done for ${username}: ${totalSongs} total`);
 }
 
 // ── Reusable helper ────────────────────────────────────────────
@@ -321,44 +306,51 @@ export async function addChannelForUser(
   userId: string,
   channelUsername: string,
   channelName: string,
-  db: any
-): Promise<{ added: boolean; channelDbId?: string; reason?: string }> {
+  db: any,
+): Promise<{ added: boolean; reason?: string }> {
   try {
     const username = channelUsername.replace("@", "");
 
-    const exists = await db.collection("telegram_channels").findOne({
-      userId: userId.toString(),
+    const exists = await db.collection("user_channels").findOne({
+      userId,
       channelUsername: username,
     });
     if (exists) return { added: false, reason: "already exists" };
 
-    let photoUrl: string | null = null;
-    try {
-      photoUrl = await telegramService.getChannelPhoto(username, userId);
-    } catch (_) {}
+    let channel = await db
+      .collection("channels")
+      .findOne({ channelUsername: username });
+    let needsSync = false;
 
-    const newChannel = {
-      userId: userId.toString(),
+    if (!channel) {
+      let photoUrl: string | null = null;
+      try {
+        photoUrl = await telegramService.getChannelPhoto(username, userId);
+      } catch (_) {}
+
+      await db.collection("channels").insertOne({
+        channelUsername: username,
+        channelName,
+        photoUrl,
+        songsCount: 0,
+        status: "pending",
+        lastSync: null,
+      });
+      needsSync = true;
+    }
+
+    await db.collection("user_channels").insertOne({
+      userId,
       channelUsername: username,
-      channelName,
-      photoUrl,
-      status: "pending",
-      songsCount: 0,
       addedAt: new Date(),
       isDefault: true,
-    };
-
-    const result = await db.collection("telegram_channels").insertOne(newChannel);
-    const channelDbId = result.insertedId.toString();
-
-    _syncInBackground(channelDbId, username, userId, db).catch((err) => {
-      console.error(`Background sync failed for ${username}:`, err);
-      db.collection("telegram_channels")
-        .updateOne({ _id: result.insertedId }, { $set: { status: "error" } })
-        .catch(() => {});
     });
 
-    return { added: true, channelDbId };
+    if (needsSync) {
+      _syncInBackground(username, userId, db).catch(console.error);
+    }
+
+    return { added: true };
   } catch (err) {
     console.error("addChannelForUser failed:", err);
     return { added: false, reason: "error" };

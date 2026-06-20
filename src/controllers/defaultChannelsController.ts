@@ -21,7 +21,7 @@ function getDefaultChannels(): Array<{ username: string; name: string }> {
 
   // بعد فایل رو چک کن
   try {
-    const fs   = require("fs");
+    const fs = require("fs");
     const path = require("path");
     const filePath = path.join(process.cwd(), "default_channels.json");
     if (fs.existsSync(filePath)) {
@@ -39,7 +39,7 @@ function getDefaultChannels(): Array<{ username: string; name: string }> {
 export const applyDefaultChannelsToAllUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const defaults = getDefaultChannels();
@@ -53,7 +53,7 @@ export const applyDefaultChannelsToAllUsers = async (
       });
     }
 
-    const db    = mongoose.connection.db;
+    const db = mongoose.connection.db;
     const users = await db
       .collection("users")
       .find({ isActive: true })
@@ -65,18 +65,23 @@ export const applyDefaultChannelsToAllUsers = async (
       const userId = user._id.toString();
 
       const existingChannels = await db
-        .collection("telegram_channels")
+        .collection("user_channels")
         .find({ userId })
         .project({ channelUsername: 1 })
         .toArray();
 
       const existingUsernames = new Set(
-        existingChannels.map((c: any) => c.channelUsername)
+        existingChannels.map((c: any) => c.channelUsername),
       );
 
       for (const dc of defaults) {
         if (existingUsernames.has(dc.username)) continue;
-        const result = await addChannelForUser(userId, dc.username, dc.name, db);
+        const result = await addChannelForUser(
+          userId,
+          dc.username,
+          dc.name,
+          db,
+        );
         if (result.added) added++;
       }
     }
@@ -93,9 +98,11 @@ export const applyDefaultChannelsToAllUsers = async (
 };
 
 // ── Internal helper: بعد از register هر کاربر جدید صدا زده میشه ──
-export async function applyDefaultChannelsForNewUser(userId: any): Promise<void> {
+export async function applyDefaultChannelsForNewUser(
+  userId: any,
+): Promise<void> {
   try {
-    const db       = mongoose.connection.db;
+    const db = mongoose.connection.db;
     const defaults = getDefaultChannels();
 
     for (const dc of defaults) {
@@ -111,7 +118,7 @@ export async function applyDefaultChannelsForNewUser(userId: any): Promise<void>
 export const listDefaultChannels = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const channels = getDefaultChannels();
