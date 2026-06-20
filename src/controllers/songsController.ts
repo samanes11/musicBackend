@@ -69,13 +69,21 @@ export const getSongs = async (
     if (sortBy === "title") sort = { title: 1 };
     else if (sortBy === "artist") sort = { artist: 1 };
 
-    if (search && (search as string).trim()) {
-      const safeSearch = escapeRegex(search as string);
+    const rawSearch = search;
 
-      query.$or = [
-        { title: { $regex: safeSearch, $options: "i" } },
-        { artist: { $regex: safeSearch, $options: "i" } },
-      ];
+    if (typeof rawSearch === "string" && rawSearch.trim()) {
+      const terms = rawSearch.trim().split(/\s+/);
+
+      query.$or = terms.flatMap((term) => {
+        const safe = escapeRegex(term);
+
+        return [
+          { title: { $regex: `\\b${safe}`, $options: "i" } },
+          { artist: { $regex: `\\b${safe}`, $options: "i" } },
+          { title: { $regex: `${safe}\\b`, $options: "i" } },
+          { artist: { $regex: `${safe}\\b`, $options: "i" } },
+        ];
+      });
     }
 
     const [total, songs] = await Promise.all([
