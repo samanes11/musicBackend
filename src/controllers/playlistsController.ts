@@ -133,7 +133,7 @@ export const getPlaylistSongs = async (
 
     // fetch and preserve order
     const songs = await db
-      .collection("telegram_songs")
+      .collection("songs")
       .find({ _id: { $in: objIds } })
       .toArray();
 
