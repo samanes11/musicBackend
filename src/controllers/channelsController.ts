@@ -315,7 +315,7 @@ export async function _syncInBackground(
     },
   );
 
-  const CONCURRENCY = 6; 
+  const CONCURRENCY = 10; 
 
   setImmediate(async () => {
     const filesToProcess = result
