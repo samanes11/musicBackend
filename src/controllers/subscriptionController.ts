@@ -2,16 +2,17 @@ import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 
-// ── پلن‌های اشتراک — هر وقت خواستی قیمت/مدت رو عوض کن ─────────────
+// ── Subscription plans — adjust pricing/duration anytime ──────────
 export const SUBSCRIPTION_PLANS: Record<
   string,
   { id: string; title: string; days: number; price: number }
 > = {
-  "1m": { id: "1m", title: "۱ ماهه", days: 30, price: 49000 },
-  "3m": { id: "3m", title: "۳ ماهه", days: 90, price: 119000 },
-  "6m": { id: "6m", title: "۶ ماهه", days: 180, price: 199000 },
+  "1m": { id: "1m", title: "1 Month", days: 30, price: 49000 },
+  "3m": { id: "3m", title: "3 Months", days: 90, price: 119000 },
+  "6m": { id: "6m", title: "6 Months", days: 180, price: 199000 },
 };
-// ── آدرس درگاه پرداخت خودت رو این‌جا یا در .env (PAYMENT_GATEWAY_URL) بذار ──
+
+// ── Put your real payment gateway URL here or in .env (PAYMENT_GATEWAY_URL) ──
 const PAYMENT_GATEWAY_URL =
   process.env.PAYMENT_GATEWAY_URL || "https://example.com/pay";
 const PUBLIC_API_URL =
@@ -19,11 +20,10 @@ const PUBLIC_API_URL =
   "https://musicbackend-production-7d94.up.railway.app/api";
 
 // ── POST /api/subscription/order ──────────────────────────────────
-// ── POST /api/subscription/order ──────────────────────────────────
 export const createSubscriptionOrder = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -31,16 +31,16 @@ export const createSubscriptionOrder = async (
 
     const plan = SUBSCRIPTION_PLANS[planId];
     if (!plan) {
-      return res.status(400).json({ success: false, message: "پلن نامعتبر است" });
+      return res.status(400).json({ success: false, message: "Invalid plan" });
     }
 
     const db = mongoose.connection.db;
     const orderId = crypto.randomBytes(12).toString("hex");
 
     // ─────────────────────────────────────────────────────────
-    // 🧪 TEST MODE — فقط برای تست، قبل از پروداکشن این بلوک رو حذف کن
+    // 🧪 TEST MODE — for testing only, remove this block before production
     // ─────────────────────────────────────────────────────────
-    const TEST_MODE = true; // ← وقتی رفتی پروداکشن، این رو false کن یا کل بلوک رو پاک کن
+    const TEST_MODE = true; // ← set to false (or delete this whole block) when going to production
 
     if (TEST_MODE) {
       await db.collection("subscription_orders").insertOne({
@@ -69,7 +69,7 @@ export const createSubscriptionOrder = async (
       });
     }
     // ─────────────────────────────────────────────────────────
-    // پایان بلوک تست
+    // end of test block
     // ─────────────────────────────────────────────────────────
 
     await db.collection("subscription_orders").insertOne({
@@ -98,7 +98,7 @@ export const createSubscriptionOrder = async (
 };
 
 // ── GET /api/subscription/callback ────────────────────────────────
-// درگاه پرداخت، بعد از تکمیل، کاربر رو به این آدرس برمی‌گردونه
+// The payment gateway redirects the user here after payment completes
 export const subscriptionCallback = async (
   req: Request,
   res: Response,
@@ -115,10 +115,12 @@ export const subscriptionCallback = async (
       .collection("subscription_orders")
       .findOne({ orderId });
     if (!order)
-      return res.status(404).send(_resultPage(false, "سفارش پیدا نشد"));
+      return res.status(404).send(_resultPage(false, "Order not found"));
 
     if (order.status === "paid") {
-      return res.send(_resultPage(true, "این پرداخت قبلاً تایید شده است"));
+      return res.send(
+        _resultPage(true, "This payment has already been confirmed"),
+      );
     }
 
     const isSuccess = status === "success" || status === "OK" || status === "1";
@@ -129,11 +131,11 @@ export const subscriptionCallback = async (
           { orderId },
           { $set: { status: "failed", failedAt: new Date() } },
         );
-      return res.send(_resultPage(false, "پرداخت ناموفق بود"));
+      return res.send(_resultPage(false, "Payment failed"));
     }
 
-    // TODO: این‌جا verify واقعی تراکنش با درگاه خودت رو اضافه کن
-    // (مثلاً درخواست verify به Zarinpal/IDPay با authority/trackId قبل از تایید نهایی)
+    // TODO: add real transaction verification with your gateway here
+    // (e.g. verify request to Zarinpal/IDPay with authority/trackId before final confirmation)
 
     await db
       .collection("subscription_orders")
@@ -141,7 +143,9 @@ export const subscriptionCallback = async (
 
     await _extendUserSubscription(order.userId, order.planId, order.days, db);
 
-    res.send(_resultPage(true, "اشتراک شما با موفقیت فعال شد 🎉"));
+    res.send(
+      _resultPage(true, "Your subscription has been activated successfully 🎉"),
+    );
   } catch (error) {
     next(error);
   }
@@ -177,8 +181,8 @@ async function _extendUserSubscription(
 }
 
 function _resultPage(success: boolean, message: string): string {
-  return `<!DOCTYPE html><html dir="rtl" lang="fa"><head><meta charset="utf-8">
-  <title>نتیجه پرداخت</title>
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+  <title>Payment Result</title>
   <style>
     body{font-family:sans-serif;background:#09090b;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
     .box{text-align:center;padding:32px;border-radius:20px;background:#18181b;border:1px solid #27272a}
@@ -188,9 +192,9 @@ function _resultPage(success: boolean, message: string): string {
   </style></head><body>
     <div class="box">
       <div class="icon ${success ? "ok" : "fail"}">${success ? "✓" : "✕"}</div>
-      <h2>${success ? "پرداخت موفق" : "پرداخت ناموفق"}</h2>
+      <h2>${success ? "Payment Successful" : "Payment Failed"}</h2>
       <p>${message}</p>
-      <p style="font-size:13px;margin-top:16px">می‌توانید به اپلیکیشن برگردید.</p>
+      <p style="font-size:13px;margin-top:16px">You can now return to the app.</p>
     </div>
   </body></html>`;
 }
@@ -213,7 +217,7 @@ export const getOrderStatus = async (
     if (!order) {
       return res
         .status(404)
-        .json({ success: false, message: "سفارش پیدا نشد" });
+        .json({ success: false, message: "Order not found" });
     }
 
     res.json({
