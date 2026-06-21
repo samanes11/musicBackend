@@ -12,7 +12,7 @@ export const getSongs = async (
 ) => {
   try {
     const userId = (req as any).user.id;
-    const { channelDbId, page = 1, limit = 50, search, sortBy } = req.query;
+    const { page = 1, limit = 50, search, sortBy, channelUsername } = req.query;
     const db = mongoose.connection.db;
     const pageNum = Math.max(1, parseInt(page as string));
     const limitNum = Math.min(200, parseInt(limit as string));
@@ -20,11 +20,11 @@ export const getSongs = async (
 
     const query: Record<string, any> = {};
 
-    if (channelDbId) {
-      const hasChannel = await db.collection("user_channels").findOne({
-        userId: userId.toString(),
-        channelUsername: channelDbId,
-      });
+    if (channelUsername) {
+  const hasChannel = await db.collection("user_channels").findOne({
+    userId: userId.toString(),
+    channelUsername: channelUsername,
+  });
       if (!hasChannel) {
         return res.json({
           success: true,
@@ -35,7 +35,7 @@ export const getSongs = async (
           hasMore: false,
         });
       }
-      query.channelUsername = channelDbId;
+      query.channelUsername = channelUsername;
     } else {
       const userChannels = await db
         .collection("user_channels")

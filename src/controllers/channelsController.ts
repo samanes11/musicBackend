@@ -200,19 +200,17 @@ export const getSyncStatus = async (req, res, next) => {
       return res.status(404).json({ success: false, msg: "Channel not found" });
     }
 
-    const channel = await db
-      .collection("channels")
-      .findOne(
-        { channelUsername: username },
-        {
-          projection: {
-            status: 1,
-            songsCount: 1,
-            totalEstimate: 1,
-            lastSync: 1,
-          },
+    const channel = await db.collection("channels").findOne(
+      { channelUsername: username },
+      {
+        projection: {
+          status: 1,
+          songsCount: 1,
+          totalEstimate: 1,
+          lastSync: 1,
         },
-      );
+      },
+    );
 
     res.json({
       success: true,
@@ -317,29 +315,38 @@ export async function _syncInBackground(
     },
   );
 
-  // ── thumbnail download همون قبلی، بدون تغییر ──
   const thumbLimit = Math.min(result.files.length, 30);
+  const CONCURRENCY = 6; // download together
+
   setImmediate(async () => {
-    for (let i = 0; i < thumbLimit; i++) {
-      const file = result.files![i];
-      if (file.thumbnail && file.thumbnail !== DEFAULT_COVER_URL) continue;
-      try {
-        const thumbnail = await telegramService.downloadSongThumbnail(
-          username,
-          file.messageId,
-          userId,
-        );
-        if (thumbnail) {
-          await db
-            .collection("songs")
-            .updateOne(
-              { channelUsername: username, messageId: file.messageId },
-              { $set: { thumbnail } },
-            );
-        }
-      } catch (_) {}
-      await new Promise((r) => setTimeout(r, 200));
+    const filesToProcess = result
+      .files!.slice(0, thumbLimit)
+      .filter((f) => !f.thumbnail || f.thumbnail === DEFAULT_COVER_URL);
+
+    let idx = 0;
+
+    async function worker() {
+      while (idx < filesToProcess.length) {
+        const file = filesToProcess[idx++];
+        try {
+          const thumbnail = await telegramService.downloadSongThumbnail(
+            username,
+            file.messageId,
+            userId,
+          );
+          if (thumbnail) {
+            await db
+              .collection("songs")
+              .updateOne(
+                { channelUsername: username, messageId: file.messageId },
+                { $set: { thumbnail } },
+              );
+          }
+        } catch (_) {}
+      }
     }
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
   });
 }
 
