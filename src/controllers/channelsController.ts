@@ -315,12 +315,11 @@ export async function _syncInBackground(
     },
   );
 
-  const thumbLimit = Math.min(result.files.length, 30);
-  const CONCURRENCY = 6; // download together
+  const CONCURRENCY = 6; 
 
   setImmediate(async () => {
     const filesToProcess = result
-      .files!.slice(0, thumbLimit)
+      .files!
       .filter((f) => !f.thumbnail || f.thumbnail === DEFAULT_COVER_URL);
 
     let idx = 0;
