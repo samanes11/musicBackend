@@ -21,10 +21,10 @@ export const getSongs = async (
     const query: Record<string, any> = {};
 
     if (channelUsername) {
-  const hasChannel = await db.collection("user_channels").findOne({
-    userId: userId.toString(),
-    channelUsername: channelUsername,
-  });
+      const hasChannel = await db.collection("user_channels").findOne({
+        userId: userId.toString(),
+        channelUsername: channelUsername,
+      });
       if (!hasChannel) {
         return res.json({
           success: true,
@@ -138,7 +138,7 @@ export const getSongById = async (
         _id: new mongoose.Types.ObjectId(song.channelDbId),
         userId,
       },
-      { projection: { _id: 1 } }, 
+      { projection: { _id: 1 } },
     );
     if (!owns)
       return res
