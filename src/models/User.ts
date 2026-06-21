@@ -8,6 +8,8 @@ export interface IUser extends Document {
   isActive: boolean;
   lastLogin: Date | null;
   refreshToken?: string;
+  subscriptionPlan: string | null;
+  subscriptionExpiresAt: Date | null;
   comparePassword(candidatePassword: string): Promise<boolean>;
   toPublicJSON(): object;
 }
@@ -31,8 +33,10 @@ const userSchema = new Schema<IUser>(
     isActive: { type: Boolean, default: true },
     lastLogin: { type: Date, default: null },
     refreshToken: { type: String, select: false },
+    subscriptionPlan: { type: String, default: null },
+    subscriptionExpiresAt: { type: Date, default: null },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 userSchema.pre("save", async function (next) {
@@ -43,7 +47,7 @@ userSchema.pre("save", async function (next) {
 });
 
 userSchema.methods.comparePassword = async function (
-  candidatePassword: string
+  candidatePassword: string,
 ): Promise<boolean> {
   return bcrypt.compare(candidatePassword, this.password);
 };
@@ -57,6 +61,8 @@ userSchema.methods.toPublicJSON = function () {
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
     lastLogin: this.lastLogin,
+    subscriptionPlan: this.subscriptionPlan,
+    subscriptionExpiresAt: this.subscriptionExpiresAt,
   };
 };
 

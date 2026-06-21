@@ -58,6 +58,13 @@ import {
   listForwarderJobs,
 } from "../controllers/forwarderController";
 import mongoose from "mongoose";
+import {
+  createSubscriptionOrder,
+  getOrderStatus,
+  getPlans,
+  getSubscriptionStatus,
+  subscriptionCallback,
+} from "../controllers/subscriptionController";
 
 const router = Router();
 
@@ -96,6 +103,13 @@ router.post("/admin/forwarder/cancel/:jobId", adminAuth, cancelForwarder);
 
 // ── Admin: Messages ──────────────────────────────────────────────
 router.get("/admin/messages", adminAuth, getMessages);
+
+// ── Subscription ────────────────────────────────────────────────
+router.get("/subscription/plans", getPlans);
+router.post("/subscription/order", authenticate, createSubscriptionOrder);
+router.get("/subscription/order/:orderId/status", authenticate, getOrderStatus);
+router.get("/subscription/callback", subscriptionCallback); // public — درگاه صداش میزنه
+router.get("/subscription/status", authenticate, getSubscriptionStatus);
 
 // ── Channels ────────────────────────────────────────────────────
 router.get("/channels", authenticate, getUserChannels);
