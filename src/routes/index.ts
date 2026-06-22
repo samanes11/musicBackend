@@ -36,6 +36,7 @@ import {
   getPlaylistSongs,
   addSongToPlaylist,
   removeSongFromPlaylist,
+  reorderPlaylist,
 } from "../controllers/playlistsController";
 import {
   streamSong,
@@ -175,6 +176,7 @@ router.delete(
   authenticate,
   removeSongFromPlaylist,
 );
+router.post("/playlists/:id/reorder", authenticate, reorderPlaylist);
 
 // ── Stream ──────────────────────────────────────────────────────
 router.get("/stream/check/:fileId", authenticate, checkDiskCache);

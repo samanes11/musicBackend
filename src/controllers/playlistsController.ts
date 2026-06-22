@@ -232,3 +232,34 @@ export const removeSongFromPlaylist = async (
     next(error);
   }
 };
+
+// ── POST /api/playlists/:id/reorder ───────────────────────────
+export const reorderPlaylist = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const { id: playlistId } = req.params;
+    const { songIds } = req.body;
+
+    if (!Array.isArray(songIds)) {
+      return res.status(400).json({ success: false, msg: "songIds array required" });
+    }
+
+    const db = mongoose.connection.db;
+    const result = await db.collection("user_playlists").updateOne(
+      { _id: new mongoose.Types.ObjectId(playlistId), userId },
+      { $set: { songIds, updatedAt: new Date() } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, msg: "Playlist not found" });
+    }
+
+    res.json({ success: true, msg: "Playlist reordered" });
+  } catch (error) {
+    next(error);
+  }
+};
