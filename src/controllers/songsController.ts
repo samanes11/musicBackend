@@ -1,9 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
-
-function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+import { buildSearchQuery } from "../utils/search";
 
 export const getSongs = async (
   req: Request,
@@ -63,21 +60,13 @@ export const getSongs = async (
     if (sortBy === "title") sort = { title: 1 };
     else if (sortBy === "artist") sort = { artist: 1 };
 
+    // ── سرچ ایندکس‌محور — جایگزین regex/COLLSCAN ──────────────
     const rawSearch = search;
-
     if (typeof rawSearch === "string" && rawSearch.trim()) {
-      const terms = rawSearch.trim().split(/\s+/);
-
-      query.$or = terms.flatMap((term) => {
-        const safe = escapeRegex(term);
-
-        return [
-          { title: { $regex: `\\b${safe}`, $options: "i" } },
-          { artist: { $regex: `\\b${safe}`, $options: "i" } },
-          { title: { $regex: `${safe}\\b`, $options: "i" } },
-          { artist: { $regex: `${safe}\\b`, $options: "i" } },
-        ];
-      });
+      const { clauses } = buildSearchQuery(rawSearch);
+      if (clauses.length > 0) {
+        query.$and = clauses;
+      }
     }
 
     const [total, songs] = await Promise.all([
@@ -132,7 +121,6 @@ export const getSongById = async (
         .status(404)
         .json({ success: false, message: "Song not found" });
 
-    // verify ownership: the channel that owns the song must belong to this user
     const owns = await db.collection("telegram_channels").findOne(
       {
         _id: new mongoose.Types.ObjectId(song.channelDbId),

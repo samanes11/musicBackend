@@ -53,14 +53,30 @@ async function createIndexes() {
       { channelUsername: 1, messageDate: -1 },
       { name: "songs_channel_date", background: true },
     );
-  await db.collection("songs").createIndex(
-    { title: "text", artist: "text" },
-    {
-      weights: { title: 2, artist: 1 },
-      name: "songs_text_search",
-      background: true,
-    },
-  );
+  await db
+    .collection("songs")
+    .createIndex(
+      { searchWords: 1 },
+      { name: "songs_search_words", background: true },
+    );
+  await db
+    .collection("songs")
+    .createIndex(
+      { searchPrefixes: 1 },
+      { name: "songs_search_prefixes", background: true },
+    );
+  await db
+    .collection("songs")
+    .createIndex(
+      { channelUsername: 1, searchWords: 1 },
+      { name: "songs_channel_search_words", background: true },
+    );
+  await db
+    .collection("songs")
+    .createIndex(
+      { channelUsername: 1, searchPrefixes: 1 },
+      { name: "songs_channel_search_prefixes", background: true },
+    );
 
   // user_channels (per-user mapping)
   await db

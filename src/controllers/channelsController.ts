@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import telegramService from "../services/telegram";
+import { buildSearchFields } from "../utils/search";
 
 const DEFAULT_COVER_URL =
   "https://cdn.qepal.com/qeupload/6759d578be4c8e9471a45c81/download22jpg-ghyhvjsfacjurgu04sjd2zog0rzk1e.jpg";
@@ -253,26 +254,34 @@ export async function _syncInBackground(
     userId,
     lastMessageId,
     async (batch, totalEstimate) => {
-      const bulkOps = batch.map((file) => ({
-        updateOne: {
-          filter: { channelUsername: username, messageId: file.messageId },
-          update: {
-            $set: {
-              channelUsername: username,
-              title: file.title,
-              artist: file.artist,
-              duration: file.duration,
-              fileId: file.fileId,
-              fileSize: file.fileSize,
-              mimeType: file.mimeType,
-              messageId: file.messageId,
-              messageDate: new Date(file.messageDate * 1000),
-              thumbnail: file.thumbnail || DEFAULT_COVER_URL,
+      const bulkOps = batch.map((file) => {
+        const { searchWords, searchPrefixes } = buildSearchFields(
+          file.title,
+          file.artist,
+        );
+        return {
+          updateOne: {
+            filter: { channelUsername: username, messageId: file.messageId },
+            update: {
+              $set: {
+                channelUsername: username,
+                title: file.title,
+                artist: file.artist,
+                duration: file.duration,
+                fileId: file.fileId,
+                fileSize: file.fileSize,
+                mimeType: file.mimeType,
+                messageId: file.messageId,
+                messageDate: new Date(file.messageDate * 1000),
+                thumbnail: file.thumbnail || DEFAULT_COVER_URL,
+                searchWords,
+                searchPrefixes,
+              },
             },
+            upsert: true,
           },
-          upsert: true,
-        },
-      }));
+        };
+      });
       await db.collection("songs").bulkWrite(bulkOps, { ordered: false });
 
       const syncedCount = await db
@@ -315,12 +324,12 @@ export async function _syncInBackground(
     },
   );
 
-  const CONCURRENCY = 10; 
+  const CONCURRENCY = 10;
 
   setImmediate(async () => {
-    const filesToProcess = result
-      .files!
-      .filter((f) => !f.thumbnail || f.thumbnail === DEFAULT_COVER_URL);
+    const filesToProcess = result.files!.filter(
+      (f) => !f.thumbnail || f.thumbnail === DEFAULT_COVER_URL,
+    );
 
     let idx = 0;
 
