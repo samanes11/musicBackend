@@ -7,9 +7,10 @@
  * Idempotent — هر بار اجرا کنی مقادیر تازه رو می‌نویسه.
  */
 import mongoose from "mongoose";
-import "dotenv/config";
+import dotenv from "dotenv";
 import { buildSearchFields } from "../utils/search";
 
+dotenv.config({ path: ".env.local" });
 const BATCH_SIZE = 500;
 
 async function backfill() {
