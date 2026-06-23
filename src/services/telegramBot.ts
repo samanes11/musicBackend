@@ -1,4 +1,4 @@
-import TelegramBot from "node-telegram-bot-api";
+import TelegramBot, { Message } from "node-telegram-bot-api";
 import mongoose from "mongoose";
 import crypto from "crypto";
 
@@ -166,7 +166,7 @@ bot.onText(/\/mystats/, async (msg) => {
   );
 });
 
-async function _handleAudioMessage(msg: TelegramBot.Message) {
+async function _handleAudioMessage(msg: Message) {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id.toString();
   const db = mongoose.connection.db;
