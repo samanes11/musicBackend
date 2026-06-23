@@ -1,11 +1,15 @@
-import TelegramBot, { Message } from "node-telegram-bot-api";
+import TelegramBot from "node-telegram-bot-api";
+import type { Message } from "node-telegram-bot-api";
 import mongoose from "mongoose";
 import crypto from "crypto";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
-const pendingConnections = new Map<string, { userId: string; expiresAt: Date }>();
+const pendingConnections = new Map<
+  string,
+  { userId: string; expiresAt: Date }
+>();
 
 export function generateConnectionCode(userId: string): string {
   for (const [code, data] of pendingConnections.entries()) {
@@ -36,7 +40,7 @@ bot.onText(/\/start/, async (msg) => {
         `Commands:\n` +
         `/mystats — View your account stats\n` +
         `/disconnect — Unlink this account`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "Markdown" },
     );
   }
 
@@ -48,7 +52,7 @@ bot.onText(/\/start/, async (msg) => {
       `2. Go to Settings → Connect Bot\n` +
       `3. Send the 6-character code shown there\n\n` +
       `Already have a code? Send it now.`,
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 });
 
@@ -64,7 +68,7 @@ bot.onText(/^[A-F0-9]{6}$/, async (msg) => {
     pendingConnections.delete(code);
     return bot.sendMessage(
       chatId,
-      "❌ Invalid or expired code. Please generate a new one in the app."
+      "❌ Invalid or expired code. Please generate a new one in the app.",
     );
   }
 
@@ -79,7 +83,7 @@ bot.onText(/^[A-F0-9]{6}$/, async (msg) => {
         isActive: true,
       },
     },
-    { upsert: true }
+    { upsert: true },
   );
 
   pendingConnections.delete(code);
@@ -89,7 +93,7 @@ bot.onText(/^[A-F0-9]{6}$/, async (msg) => {
     `✅ *Connected successfully!*\n\n` +
       `You can now send me audio files and they'll appear in your Tel Player app. 🎶\n\n` +
       `Use /mystats to see your account info.`,
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 });
 
@@ -112,7 +116,7 @@ bot.onText(/\/disconnect/, async (msg) => {
 
   bot.sendMessage(
     chatId,
-    "🔌 Disconnected. Send /start to link a new account."
+    "🔌 Disconnected. Send /start to link a new account.",
   );
 });
 
@@ -128,17 +132,21 @@ bot.onText(/\/mystats/, async (msg) => {
   if (!connection) {
     return bot.sendMessage(
       chatId,
-      "❌ You're not connected to an account. Send /start to get started."
+      "❌ You're not connected to an account. Send /start to get started.",
     );
   }
 
   const [botSongsCount, user] = await Promise.all([
-    db
-      .collection("bot_songs")
-      .countDocuments({ userId: connection.userId }),
+    db.collection("bot_songs").countDocuments({ userId: connection.userId }),
     db.collection("users").findOne(
       { _id: new mongoose.Types.ObjectId(connection.userId) },
-      { projection: { subscriptionPlan: 1, subscriptionExpiresAt: 1, name: 1 } }
+      {
+        projection: {
+          subscriptionPlan: 1,
+          subscriptionExpiresAt: 1,
+          name: 1,
+        },
+      },
     ),
   ]);
 
@@ -162,7 +170,7 @@ bot.onText(/\/mystats/, async (msg) => {
       `💎 Subscription: ${isPremium ? "Active ✅" : "None ❌"}\n` +
       (isPremium ? `📅 Expires: ${expiryDate}\n` : "") +
       `\nTo manage your subscription, open the Tel Player app.`,
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 });
 
@@ -178,7 +186,7 @@ async function _handleAudioMessage(msg: Message) {
   if (!connection) {
     return bot.sendMessage(
       chatId,
-      "❌ Please connect your account first.\nSend /start to get started."
+      "❌ Please connect your account first.\nSend /start to get started.",
     );
   }
 
@@ -186,14 +194,17 @@ async function _handleAudioMessage(msg: Message) {
   if (!audio) return;
 
   const fileId = audio.file_id;
+  const telegramAudio = msg.audio as any;
+  const telegramDocument = msg.document as any;
+
   const fileName =
-    msg.audio?.file_name || msg.document?.file_name || "unknown.mp3";
-  const title = msg.audio?.title || fileName.replace(/\.[^.]+$/, "");
-  const artist = msg.audio?.performer || "Unknown";
-  const duration = msg.audio?.duration || 0;
-  const fileSize = audio.file_size || 0;
+    telegramAudio?.file_name || telegramDocument?.file_name || "unknown.mp3";
+  const title = telegramAudio?.title || fileName.replace(/\.[^.]+$/, "");
+  const artist = telegramAudio?.performer || "Unknown";
+  const duration = telegramAudio?.duration || 0;
   const mimeType =
-    msg.audio?.mime_type || msg.document?.mime_type || "audio/mpeg";
+    telegramAudio?.mime_type || telegramDocument?.mime_type || "audio/mpeg";
+  const fileSize = audio.file_size || 0;
 
   const exists = await db
     .collection("bot_songs")
@@ -228,7 +239,7 @@ async function _handleAudioMessage(msg: Message) {
     `✅ *${title}* received!\n` +
       `🎤 ${artist !== "Unknown" ? artist : "Unknown artist"}  •  ⏱ ${durationStr}\n\n` +
       `Open Tel Player to download and play it. 🎵`,
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 }
 
@@ -245,7 +256,7 @@ bot.on("polling_error", (err) => {
 
 export async function broadcastMessage(
   message: string,
-  targetUserIds?: string[]
+  targetUserIds?: string[],
 ): Promise<{ sent: number; failed: number }> {
   const db = mongoose.connection.db;
 

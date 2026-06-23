@@ -21,7 +21,7 @@
     "https-proxy-agent": "^7.0.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.0",
-    "node-telegram-bot-api": "^1.1.1",
+    "node-telegram-bot-api": "^0.61.0",
     "telegram": "^2.19.7"
   },
   "devDependencies": {
