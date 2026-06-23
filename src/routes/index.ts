@@ -66,7 +66,7 @@ import {
   getSubscriptionStatus,
   subscriptionCallback,
 } from "../controllers/subscriptionController";
-import { adminBroadcast, deleteBotSong, disconnectBot, generateCode, getBotSongs, getBotStatus } from "../controllers/botController";
+import { adminBroadcast, deleteBotSong, disconnectBot, generateCode, getBotSongs, getBotStatus, refreshBotSongThumbnails } from "../controllers/botController";
 
 const router = Router();
 
@@ -204,5 +204,6 @@ router.delete("/bot/disconnect", authenticate, disconnectBot);
 router.get("/bot/songs", authenticate, getBotSongs);
 router.delete("/bot/songs/:id", authenticate, deleteBotSong);
 router.post("/admin/bot/broadcast", adminAuth, adminBroadcast);
+router.get("/bot/songs/refresh-thumbnails", authenticate, refreshBotSongThumbnails);
 
 export default router;

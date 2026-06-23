@@ -117,6 +117,30 @@ export const getBotSongs = async (
   }
 };
 
+export const refreshBotSongThumbnails = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const db = mongoose.connection.db;
+
+    const songs = await db
+      .collection("bot_songs")
+      .find({ userId, thumbnail: null })
+      .toArray();
+
+    res.json({
+      success: true,
+      message: `${songs.length} songs need thumbnail refresh. Re-send them to the bot to update.`,
+      count: songs.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteBotSong = async (
   req: Request,
   res: Response,

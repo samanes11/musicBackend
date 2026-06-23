@@ -203,7 +203,7 @@ async function _handleAudioMessage(msg: TelegramBot.Message) {
     return bot.sendMessage(chatId, `⚠️ This track has already been received.`);
   }
 
-  // Forward به کانال storage تا fileReference معتبر بمونه
+  // Forward به کانال storage
   const storageChannel = process.env.BOT_STORAGE_CHANNEL!;
   let storageMessageId: number;
   let storageChannelUsername: string;
@@ -234,11 +234,37 @@ async function _handleAudioMessage(msg: TelegramBot.Message) {
   const mimeType =
     msg.audio?.mime_type || (audio as any).mime_type || "audio/mpeg";
 
+  // دانلود thumbnail — اگه audio.thumb داشت
+  let thumbnail: string | null = null;
+  const thumb = (msg.audio as any)?.thumb || (msg.document as any)?.thumb;
+
+  if (thumb?.file_id) {
+    try {
+      const fileLink = await bot.getFileLink(thumb.file_id);
+      const https = require("https");
+      const chunks: Buffer[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        https
+          .get(fileLink, (res: any) => {
+            res.on("data", (chunk: Buffer) => chunks.push(chunk));
+            res.on("end", resolve);
+            res.on("error", reject);
+          })
+          .on("error", reject);
+      });
+
+      const buffer = Buffer.concat(chunks);
+      thumbnail = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+    } catch (e: any) {
+      console.warn("Failed to download thumbnail:", e.message);
+    }
+  }
+
   await db.collection("bot_songs").insertOne({
     userId: connection.userId,
     telegramId,
     originalFileId,
-    // این‌ها برای stream استفاده میشن — مثل songs معمولی
     fileId: originalFileId,
     channelUsername: storageChannelUsername,
     messageId: storageMessageId,
@@ -247,7 +273,7 @@ async function _handleAudioMessage(msg: TelegramBot.Message) {
     duration,
     fileSize,
     mimeType,
-    thumbnail: null,
+    thumbnail,
     receivedAt: new Date(),
   });
 
