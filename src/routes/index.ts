@@ -66,6 +66,7 @@ import {
   getSubscriptionStatus,
   subscriptionCallback,
 } from "../controllers/subscriptionController";
+import { adminBroadcast, deleteBotSong, disconnectBot, generateCode, getBotSongs, getBotStatus } from "../controllers/botController";
 
 const router = Router();
 
@@ -195,5 +196,13 @@ router.get("/downloads/check/:fileId", authenticate, checkServerCache);
 router.get("/proxy", authenticate, getProxy);
 router.post("/proxy", authenticate, setProxy);
 router.post("/proxy/test", authenticate, testProxy);
+
+// Bot
+router.post("/bot/connect/generate", authenticate, generateCode);
+router.get("/bot/status", authenticate, getBotStatus);
+router.delete("/bot/disconnect", authenticate, disconnectBot);
+router.get("/bot/songs", authenticate, getBotSongs);
+router.delete("/bot/songs/:id", authenticate, deleteBotSong);
+router.post("/admin/bot/broadcast", adminAuth, adminBroadcast);
 
 export default router;

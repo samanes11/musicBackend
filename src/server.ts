@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import connectDB from "./config/database";
 import routes from "./routes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
+import "./services/telegramBot";
 
 const app = express();
 

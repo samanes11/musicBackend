@@ -1,0 +1,142 @@
+import { Request, Response, NextFunction } from "express";
+import mongoose from "mongoose";
+import {
+  generateConnectionCode,
+  broadcastMessage,
+} from "../services/telegramBot";
+
+export const generateCode = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const code = generateConnectionCode(userId);
+    res.json({ success: true, data: { code, expiresInMinutes: 10 } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getBotStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const db = mongoose.connection.db;
+
+    const connection = await db
+      .collection("bot_connections")
+      .findOne({ userId });
+
+    res.json({
+      success: true,
+      data: {
+        connected: !!connection?.isActive,
+        telegramUsername: connection?.telegramUsername || null,
+        connectedAt: connection?.connectedAt || null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const disconnectBot = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const db = mongoose.connection.db;
+
+    await db
+      .collection("bot_connections")
+      .updateOne({ userId }, { $set: { isActive: false } });
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getBotSongs = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const { page = 1, limit = 50 } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string));
+    const limitNum = Math.min(200, parseInt(limit as string));
+    const skip = (pageNum - 1) * limitNum;
+    const db = mongoose.connection.db;
+
+    const [songs, total] = await Promise.all([
+      db
+        .collection("bot_songs")
+        .find({ userId })
+        .sort({ receivedAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .toArray(),
+      db.collection("bot_songs").countDocuments({ userId }),
+    ]);
+
+    res.json({
+      success: true,
+      data: songs,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      hasMore: pageNum < Math.ceil(total / limitNum),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteBotSong = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const { id } = req.params;
+    const db = mongoose.connection.db;
+
+    await db.collection("bot_songs").deleteOne({
+      _id: new mongoose.Types.ObjectId(id),
+      userId,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const adminBroadcast = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { message, targetUserIds } = req.body;
+    if (!message?.trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "message is required" });
+    }
+    const result = await broadcastMessage(message, targetUserIds);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
