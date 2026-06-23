@@ -63,6 +63,104 @@ export const streamSong = async (
     const userId = (req as any).user.id.toString();
     const { fileId, channelUsername, messageId, songId } = req.body;
 
+    const { botSongId } = req.body;
+
+    if (botSongId) {
+      const db = mongoose.connection.db;
+      const botSong = await db.collection("bot_songs").findOne({
+        _id: new mongoose.Types.ObjectId(botSongId),
+        userId,
+      });
+      if (!botSong) {
+        return res
+          .status(404)
+          .json({ success: false, msg: "Bot song not found" });
+      }
+
+      // اگه کش شده بود مستقیم سرو کن
+      if (isCached(botSong.fileId)) {
+        const cachePath = getCachePath(botSong.fileId);
+        const fileSize = fs.statSync(cachePath).size;
+        const token = signStreamToken({
+          fileId: botSong.fileId,
+          channelUsername: "__bot__",
+          messageId: botSong.messageId,
+          userId,
+        });
+        res.set({
+          "Content-Type": "audio/mpeg",
+          "Content-Length": fileSize.toString(),
+          "Accept-Ranges": "bytes",
+          "Cache-Control": "no-store",
+          "X-Cached": "true",
+          "X-Stream-Token": token,
+          "X-Stream-Url": `/api/stream/${token}`,
+        });
+        return fs.createReadStream(cachePath).pipe(res);
+      }
+
+      // دانلود از تلگرام با fileId مستقیم
+      let handle;
+      try {
+        handle = await telegramService.prepareStreamDownloadByFileId(
+          botSong.fileId,
+          userId,
+        );
+      } catch (err: any) {
+        return res.status(502).json({ success: false, msg: err.message });
+      }
+
+      const token = signStreamToken({
+        fileId: botSong.fileId,
+        channelUsername: "__bot__",
+        messageId: botSong.messageId,
+        userId,
+      });
+
+      res.set({
+        "Content-Type": "audio/mpeg",
+        ...(handle.totalSize > 0
+          ? { "Content-Length": handle.totalSize.toString() }
+          : {}),
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+        "X-Stream-Token": token,
+        "X-Stream-Url": `/api/stream/${token}`,
+      });
+
+      const cachePath = getCachePath(botSong.fileId);
+      const tempPath = `${cachePath}.part`;
+      const fileStream = fs.createWriteStream(tempPath);
+      let clientGone = false;
+      req.on("close", () => {
+        clientGone = true;
+      });
+
+      try {
+        for await (const chunk of handle.chunks) {
+          fileStream.write(chunk);
+          if (!clientGone) {
+            const ok = res.write(chunk);
+            if (!ok) await new Promise((resolve) => res.once("drain", resolve));
+          }
+        }
+        await new Promise<void>((resolve, reject) => {
+          fileStream.end((err?: Error) => (err ? reject(err) : resolve()));
+        });
+        fs.renameSync(tempPath, cachePath);
+        if (!clientGone) res.end();
+      } catch (err) {
+        fileStream.destroy();
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {}
+        if (!res.headersSent)
+          res.status(502).json({ success: false, msg: "Streaming failed" });
+        else res.end();
+      }
+      return;
+    }
+
     if (!fileId || !channelUsername || !messageId) {
       return res.status(400).json({
         success: false,

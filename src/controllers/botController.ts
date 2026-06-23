@@ -8,7 +8,7 @@ import {
 export const generateCode = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -22,7 +22,7 @@ export const generateCode = async (
 export const getBotStatus = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -48,7 +48,7 @@ export const getBotStatus = async (
 export const disconnectBot = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -67,7 +67,7 @@ export const disconnectBot = async (
 export const getBotSongs = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -88,9 +88,25 @@ export const getBotSongs = async (
       db.collection("bot_songs").countDocuments({ userId }),
     ]);
 
+    // فرمت رو مثل songs معمولی کن تا Flutter بتونه Song.fromJson بزنه
+    const formatted = songs.map((s) => ({
+      _id: s._id.toString(),
+      channelDbId: s._id.toString(),
+      channelUsername: s.channelUsername,
+      channelName: "Bot Inbox",
+      title: s.title,
+      artist: s.artist,
+      duration: s.duration,
+      fileId: s.fileId,
+      fileSize: s.fileSize,
+      thumbnail: s.thumbnail,
+      messageId: s.messageId,
+      isFavorite: false,
+    }));
+
     res.json({
       success: true,
-      data: songs,
+      data: formatted,
       total,
       page: pageNum,
       totalPages: Math.ceil(total / limitNum),
@@ -104,7 +120,7 @@ export const getBotSongs = async (
 export const deleteBotSong = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -125,7 +141,7 @@ export const deleteBotSong = async (
 export const adminBroadcast = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const { message, targetUserIds } = req.body;

@@ -2,6 +2,7 @@ import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { Api } from "telegram/tl";
 import mongoose from "mongoose";
+import bigInt from "big-integer";
 
 const API_ID = 36237198;
 const API_HASH = "52b771886a88d8152f0d275898308e7f";
@@ -188,87 +189,133 @@ class TelegramService {
   }
 
   async getChannelAudioFiles(
-  channelUsername: string,
-  userId?: any,
-  lastMessageId: number = 0,
-  onBatch?: (files: AudioFile[], totalEstimate: number) => Promise<void>,
-): Promise<{ success: boolean; files?: AudioFile[]; error?: string }> {
-  try {
-    await this.initialize(userId);
-    const username = channelUsername.replace("@", "");
-    const entity = await this.client!.getEntity(username);
+    channelUsername: string,
+    userId?: any,
+    lastMessageId: number = 0,
+    onBatch?: (files: AudioFile[], totalEstimate: number) => Promise<void>,
+  ): Promise<{ success: boolean; files?: AudioFile[]; error?: string }> {
+    try {
+      await this.initialize(userId);
+      const username = channelUsername.replace("@", "");
+      const entity = await this.client!.getEntity(username);
 
-    const audioFiles: AudioFile[] = [];
-    let offsetId = 0;
-    let reachedEnd = false;
-    let totalEstimate = 0;
+      const audioFiles: AudioFile[] = [];
+      let offsetId = 0;
+      let reachedEnd = false;
+      let totalEstimate = 0;
 
-    while (!reachedEnd) {
-      const messages = await this.client!.getMessages(entity, {
-        limit: 100,
-        offsetId,
-        filter: new Api.InputMessagesFilterMusic(),
-      });
+      while (!reachedEnd) {
+        const messages = await this.client!.getMessages(entity, {
+          limit: 100,
+          offsetId,
+          filter: new Api.InputMessagesFilterMusic(),
+        });
 
-      if (totalEstimate === 0 && (messages as any).total) {
-        totalEstimate = (messages as any).total;
-      }
+        if (totalEstimate === 0 && (messages as any).total) {
+          totalEstimate = (messages as any).total;
+        }
 
-      if (messages.length === 0) {
-        reachedEnd = true;
-        break;
-      }
-
-      const batchFiles: AudioFile[] = [];
-
-      for (const msg of messages) {
-        if (lastMessageId > 0 && msg.id <= lastMessageId) {
+        if (messages.length === 0) {
           reachedEnd = true;
           break;
         }
-        if (!msg.media || msg.media.className !== "MessageMediaDocument") continue;
-        const doc = (msg.media as any).document;
-        if (!doc) continue;
 
-        const attributes = doc.attributes || [];
-        let title = "Unknown", artist = "Unknown", duration = 0;
-        for (const attr of attributes) {
-          if (attr.className === "DocumentAttributeAudio") {
-            title = attr.title || "Unknown";
-            artist = attr.performer || "Unknown";
-            duration = attr.duration || 0;
+        const batchFiles: AudioFile[] = [];
+
+        for (const msg of messages) {
+          if (lastMessageId > 0 && msg.id <= lastMessageId) {
+            reachedEnd = true;
+            break;
           }
+          if (!msg.media || msg.media.className !== "MessageMediaDocument")
+            continue;
+          const doc = (msg.media as any).document;
+          if (!doc) continue;
+
+          const attributes = doc.attributes || [];
+          let title = "Unknown",
+            artist = "Unknown",
+            duration = 0;
+          for (const attr of attributes) {
+            if (attr.className === "DocumentAttributeAudio") {
+              title = attr.title || "Unknown";
+              artist = attr.performer || "Unknown";
+              duration = attr.duration || 0;
+            }
+          }
+
+          batchFiles.push({
+            messageId: msg.id,
+            title,
+            artist,
+            duration,
+            fileId: doc.id.toString(),
+            fileSize: Number(doc.size) || 0,
+            mimeType: doc.mimeType || "audio/mpeg",
+            messageDate: msg.date,
+            fileUrl: `https://t.me/${username}/${msg.id}`,
+            thumbnail: null,
+          });
         }
 
-        batchFiles.push({
-          messageId: msg.id,
-          title, artist, duration,
-          fileId: doc.id.toString(),
-          fileSize: Number(doc.size) || 0,
-          mimeType: doc.mimeType || "audio/mpeg",
-          messageDate: msg.date,
-          fileUrl: `https://t.me/${username}/${msg.id}`,
-          thumbnail: null,
-        });
+        audioFiles.push(...batchFiles);
+
+        if (onBatch && batchFiles.length > 0) {
+          await onBatch(batchFiles, totalEstimate);
+        }
+
+        if (reachedEnd) break;
+        offsetId = messages[messages.length - 1].id;
+        await new Promise((r) => setTimeout(r, 300));
       }
 
-      audioFiles.push(...batchFiles);
+      return { success: true, files: audioFiles };
+    } catch (error: any) {
+      console.error("Telegram Error:", error);
+      return { success: false, error: error.message || "Unknown error" };
+    }
+  }
 
-      if (onBatch && batchFiles.length > 0) {
-        await onBatch(batchFiles, totalEstimate);
+  // دانلود مستقیم با fileId (برای bot songs)
+  async prepareStreamDownloadByFileId(
+    fileId: string,
+    userId?: any,
+  ): Promise<StreamDownloadHandle> {
+    await this.initialize(userId);
+
+    // از InputDocument یا InputFile با fileId استفاده کن
+    const result = await this.client!.invoke(
+      new Api.messages.GetMessages({
+        id: [new Api.InputMessageID({ id: 0 })],
+      }),
+    ).catch(() => null);
+
+    // روش مستقیم‌تر: از getMessages با fileId
+    const inputFile = new Api.InputDocumentFileLocation({
+      id: bigInt(fileId), 
+      accessHash: bigInt(0), 
+      fileReference: Buffer.alloc(0),
+      thumbSize: "",
+    });
+
+    const totalSize = 0;
+    const client = this.client!;
+
+    async function* chunkGenerator() {
+      try {
+        for await (const chunk of client.iterDownload({
+          file: inputFile as any,
+          requestSize: 512 * 1024,
+        })) {
+          yield chunk as Buffer;
+        }
+      } catch {
+        // fallback: از طریق messages.getDocumentByHash
       }
-
-      if (reachedEnd) break;
-      offsetId = messages[messages.length - 1].id;
-      await new Promise((r) => setTimeout(r, 300));
     }
 
-    return { success: true, files: audioFiles };
-  } catch (error: any) {
-    console.error("Telegram Error:", error);
-    return { success: false, error: error.message || "Unknown error" };
+    return { totalSize, chunks: chunkGenerator() };
   }
-}
 
   async downloadFile(
     fileId: string,

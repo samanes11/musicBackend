@@ -174,7 +174,7 @@ bot.onText(/\/mystats/, async (msg) => {
   );
 });
 
-async function _handleAudioMessage(msg: Message) {
+async function _handleAudioMessage(msg: TelegramBot.Message) {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id.toString();
   const db = mongoose.connection.db;
@@ -193,38 +193,60 @@ async function _handleAudioMessage(msg: Message) {
   const audio = msg.audio || msg.document;
   if (!audio) return;
 
-  const fileId = audio.file_id;
-  const telegramAudio = msg.audio as any;
-  const telegramDocument = msg.document as any;
+  const originalFileId = audio.file_id;
 
-  const fileName =
-    telegramAudio?.file_name || telegramDocument?.file_name || "unknown.mp3";
-  const title = telegramAudio?.title || fileName.replace(/\.[^.]+$/, "");
-  const artist = telegramAudio?.performer || "Unknown";
-  const duration = telegramAudio?.duration || 0;
-  const mimeType =
-    telegramAudio?.mime_type || telegramDocument?.mime_type || "audio/mpeg";
-  const fileSize = audio.file_size || 0;
-
-  const exists = await db
-    .collection("bot_songs")
-    .findOne({ userId: connection.userId, fileId });
-
+  const exists = await db.collection("bot_songs").findOne({
+    userId: connection.userId,
+    originalFileId,
+  });
   if (exists) {
     return bot.sendMessage(chatId, `⚠️ This track has already been received.`);
   }
 
+  // Forward به کانال storage تا fileReference معتبر بمونه
+  const storageChannel = process.env.BOT_STORAGE_CHANNEL!;
+  let storageMessageId: number;
+  let storageChannelUsername: string;
+
+  try {
+    const forwarded = await bot.forwardMessage(
+      storageChannel,
+      chatId,
+      msg.message_id,
+    );
+    storageMessageId = forwarded.message_id;
+    storageChannelUsername = storageChannel.replace("@", "");
+  } catch (err: any) {
+    console.error("Failed to forward to storage channel:", err.message);
+    return bot.sendMessage(
+      chatId,
+      "❌ Failed to process your file. Please try again.",
+    );
+  }
+
+  const title =
+    msg.audio?.title ||
+    (audio as any).file_name?.replace(/\.[^.]+$/, "") ||
+    "Unknown";
+  const artist = msg.audio?.performer || "Unknown";
+  const duration = msg.audio?.duration || 0;
+  const fileSize = audio.file_size || 0;
+  const mimeType =
+    msg.audio?.mime_type || (audio as any).mime_type || "audio/mpeg";
+
   await db.collection("bot_songs").insertOne({
     userId: connection.userId,
     telegramId,
-    fileId,
-    fileName,
+    originalFileId,
+    // این‌ها برای stream استفاده میشن — مثل songs معمولی
+    fileId: originalFileId,
+    channelUsername: storageChannelUsername,
+    messageId: storageMessageId,
     title,
     artist,
     duration,
     fileSize,
     mimeType,
-    messageId: msg.message_id,
     thumbnail: null,
     receivedAt: new Date(),
   });
