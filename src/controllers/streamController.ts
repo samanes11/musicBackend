@@ -6,7 +6,7 @@ import telegramService from "../services/telegram";
 import mongoose from "mongoose";
 
 const DEFAULT_COVER_URL =
-  "https://cdn.qepal.com/qeupload/6759d578be4c8e9471a45c81/download22jpg-ghyhvjsfacjurgu04sjd2zog0rzk1e.jpg";
+  "https://res.cloudinary.com/doxbcawbz/image/upload/f_auto,q_auto/default_artwork_erioxt";
 
 // ── Disk cache ─────────────────────────────────────────────────
 const AUDIO_CACHE_DIR =
