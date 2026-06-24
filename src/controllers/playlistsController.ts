@@ -131,13 +131,31 @@ export const getPlaylistSongs = async (
       })
       .filter(Boolean);
 
-    // fetch and preserve order
-    const songs = await db
-      .collection("songs")
-      .find({ _id: { $in: objIds } })
-      .toArray();
+    // fetch from both regular songs and bot songs
+    const [songs, botSongs] = await Promise.all([
+      db.collection("songs").find({ _id: { $in: objIds } }).toArray(),
+      db.collection("bot_songs").find({ _id: { $in: objIds }, userId }).toArray(),
+    ]);
 
     const songMap = new Map(songs.map((s) => [s._id.toString(), s]));
+
+    // normalize bot_songs to look like regular song docs
+    for (const bs of botSongs) {
+      songMap.set(bs._id.toString(), {
+        _id: bs._id,
+        channelDbId: bs._id.toString(),
+        channelUsername: bs.channelUsername,
+        channelName: "Bot Inbox",
+        title: bs.title,
+        artist: bs.artist,
+        duration: bs.duration,
+        fileId: bs.fileId,
+        fileSize: bs.fileSize,
+        thumbnail: bs.thumbnail,
+        messageId: bs.messageId,
+      });
+    }
+
     const ordered = pageIds.map((id: string) => songMap.get(id)).filter(Boolean);
 
     res.json({
