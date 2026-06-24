@@ -4,10 +4,9 @@ import crypto from "crypto";
 
 // ── Payment gateway config ─────────────────────────────────────────
 const PAYMENT_GATEWAY_URL =
-  process.env.PAYMENT_GATEWAY_URL || "https://example.com/pay";
+  process.env.PAYMENT_GATEWAY_URL;
 const PUBLIC_API_URL =
-  process.env.PUBLIC_API_URL ||
-  "https://musicbackend-production-7d94.up.railway.app/api";
+  process.env.PUBLIC_API_URL;
 
 
 async function getActivePlans(db: any) {
