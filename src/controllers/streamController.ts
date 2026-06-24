@@ -4,9 +4,10 @@ import fs from "fs";
 import path from "path";
 import telegramService from "../services/telegram";
 import mongoose from "mongoose";
+import { devNull } from "os";
 
-const DEFAULT_COVER_URL =
-  "https://res.cloudinary.com/doxbcawbz/image/upload/f_auto,q_auto/default_artwork_erioxt";
+// const DEFAULT_COVER_URL =
+//   "https://res.cloudinary.com/doxbcawbz/image/upload/f_auto,q_auto/default_artwork_erioxt";
 
 // ── Disk cache ─────────────────────────────────────────────────
 const AUDIO_CACHE_DIR =
@@ -450,7 +451,7 @@ async function _downloadThumbnailBg(
       .collection("telegram_songs")
       .findOne({ _id: new mongoose.Types.ObjectId(songId) });
 
-    if (!song || (song.thumbnail && song.thumbnail !== DEFAULT_COVER_URL))
+    if (!song || (song.thumbnail && song.thumbnail !== devNull))
       return;
 
     const thumbnail = await telegramService.downloadSongThumbnail(
@@ -463,7 +464,7 @@ async function _downloadThumbnailBg(
       .collection("telegram_songs")
       .updateOne(
         { _id: new mongoose.Types.ObjectId(songId) },
-        { $set: { thumbnail: thumbnail || DEFAULT_COVER_URL } },
+        { $set: { thumbnail: thumbnail || null } },
       );
   } catch {}
 }

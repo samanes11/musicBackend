@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 import telegramService from "../services/telegram";
 import { buildSearchFields } from "../utils/search";
 
-const DEFAULT_COVER_URL =
-  "https://res.cloudinary.com/doxbcawbz/image/upload/f_auto,q_auto/default_artwork_erioxt";
+// const DEFAULT_COVER_URL =
+//   "https://res.cloudinary.com/doxbcawbz/image/upload/f_auto,q_auto/default_artwork_erioxt";
 
 // ── GET /api/channels ──────────────────────────────────────────
 export const getUserChannels = async (req, res, next) => {
@@ -273,7 +273,7 @@ export async function _syncInBackground(
                 mimeType: file.mimeType,
                 messageId: file.messageId,
                 messageDate: new Date(file.messageDate * 1000),
-                thumbnail: file.thumbnail || DEFAULT_COVER_URL,
+                thumbnail: file.thumbnail || null,
                 searchWords,
                 searchPrefixes,
               },
@@ -328,7 +328,7 @@ export async function _syncInBackground(
 
   setImmediate(async () => {
     const filesToProcess = result.files!.filter(
-      (f) => !f.thumbnail || f.thumbnail === DEFAULT_COVER_URL,
+      (f) => !f.thumbnail || f.thumbnail === null,
     );
 
     let idx = 0;
