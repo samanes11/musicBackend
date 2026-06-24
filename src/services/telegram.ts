@@ -4,10 +4,9 @@ import { Api } from "telegram/tl";
 import mongoose from "mongoose";
 import bigInt from "big-integer";
 
-const API_ID = 36237198;
-const API_HASH = "52b771886a88d8152f0d275898308e7f";
-const SESSION_STRING =
-  "1AQAOMTQ5LjE1NC4xNzUuNTgBu483aXOlclPg1q4XyxCR+s4reNbnNPfJdjQcWsqqRCJEHu8h8TpEE8tQkgqcfQfVgUllwPIeXdKfqvpqycxalHNdhQbk4BlLhXS4SachxqrBvVBO28jJhdsBjBDa9VDk5zxRRWnbmDVIZewanLPnbfOb5AlGMPGCzqz/sbotuI6eoyOskF+Qwo898U3M/RWWE3hlbTMVSHqqciumApM4Yw4FpvM1zXTUEV+WrvaQztCQxBT8LbesxM5Xps236q3pP1WLx8GZ/7LisWQkG0qQsSsxxV3ej4CMU+TQ0aaSMxbLKqwyzUDHqJAlglv+WKQHH4xJwD09UPrTRgOi4ea/Ulw=";
+const API_ID = parseInt(process.env.TELEGRAM_API_ID as string, 10);
+const API_HASH = process.env.TELEGRAM_API_HASH as string;
+const SESSION_STRING = process.env.TELEGRAM_SESSION_STRING as string;
 
 interface ProxySettings {
   type: "http" | "socks5" | "mtproto" | "none";
@@ -292,8 +291,8 @@ class TelegramService {
 
     // روش مستقیم‌تر: از getMessages با fileId
     const inputFile = new Api.InputDocumentFileLocation({
-      id: bigInt(fileId), 
-      accessHash: bigInt(0), 
+      id: bigInt(fileId),
+      accessHash: bigInt(0),
       fileReference: Buffer.alloc(0),
       thumbSize: "",
     });
