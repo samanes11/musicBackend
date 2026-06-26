@@ -103,18 +103,15 @@ export async function applyDefaultChannelsForNewUser(
 ): Promise<void> {
   try {
     const db = mongoose.connection.db;
-    
+
     // از MongoDB بخون نه env
-    const defaults = await db
-      .collection("default_channels")
-      .find()
-      .toArray();
+    const defaults = await db.collection("default_channels").find().toArray();
 
     for (const dc of defaults) {
       await addChannelForUser(
         userId.toString(),
         dc.channelUsername,
-        dc.channelName,
+        dc.channelName, 
         db,
       );
     }

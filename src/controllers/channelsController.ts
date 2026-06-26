@@ -312,8 +312,10 @@ export async function _syncInBackground(
   }
 
   let photoUrl: string | null = null;
+  let realChannelName: string | null = null;
   try {
     photoUrl = await telegramService.getChannelPhoto(username, userId);
+    realChannelName = await telegramService.getChannelName(username, userId);
   } catch (_) {}
 
   await db.collection("channels").updateOne(
@@ -323,6 +325,7 @@ export async function _syncInBackground(
         status: "active",
         lastSync: new Date(),
         ...(photoUrl ? { photoUrl } : {}),
+        ...(realChannelName ? { channelName: realChannelName } : {}),
       },
     },
   );
@@ -402,7 +405,7 @@ export async function addChannelForUser(
     await db.collection("user_channels").insertOne({
       userId,
       channelUsername: username,
-      channelDisplayName: channelName, 
+      channelDisplayName: channelName,
       addedAt: new Date(),
       isDefault: true,
     });

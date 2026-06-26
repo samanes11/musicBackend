@@ -187,6 +187,21 @@ class TelegramService {
     }
   }
 
+  async getChannelName(
+    channelUsername: string,
+    userId?: any,
+  ): Promise<string | null> {
+    try {
+      await this.initialize(userId);
+      const username = channelUsername.replace("@", "");
+      const entity = await this.client!.getEntity(username);
+      return (entity as any).title || null;
+    } catch (error: any) {
+      console.error("Failed to get channel name:", error);
+      return null;
+    }
+  }
+
   async getChannelAudioFiles(
     channelUsername: string,
     userId?: any,
