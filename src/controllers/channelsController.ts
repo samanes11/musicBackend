@@ -30,7 +30,11 @@ export const getUserChannels = async (req, res, next) => {
             newRoot: {
               $mergeObjects: [
                 { $arrayElemAt: ["$channel", 0] },
-                { addedAt: "$addedAt", isDefault: "$isDefault" },
+                {
+                  addedAt: "$addedAt",
+                  isDefault: "$isDefault",
+                  channelDisplayName: "$channelDisplayName",
+                },
               ],
             },
           },
@@ -70,7 +74,6 @@ export const addChannel = async (req, res, next) => {
         .json({ success: false, msg: "Channel already added" });
     }
 
-    // چنل shared رو پیدا کن یا بساز
     let channel = await db
       .collection("channels")
       .findOne({ channelUsername: username });
@@ -80,7 +83,7 @@ export const addChannel = async (req, res, next) => {
       const photoUrl = await telegramService.getChannelPhoto(username, userId);
       const result = await db.collection("channels").insertOne({
         channelUsername: username,
-        channelName,
+        channelName: channelName,
         photoUrl,
         songsCount: 0,
         status: "pending",
@@ -96,10 +99,10 @@ export const addChannel = async (req, res, next) => {
       needsSync = true;
     }
 
-    // اضافه کن به user_channels
     await db.collection("user_channels").insertOne({
       userId,
       channelUsername: username,
+      channelDisplayName: channelName,
       addedAt: new Date(),
       isDefault: false,
     });
@@ -399,6 +402,7 @@ export async function addChannelForUser(
     await db.collection("user_channels").insertOne({
       userId,
       channelUsername: username,
+      channelDisplayName: channelName, 
       addedAt: new Date(),
       isDefault: true,
     });
