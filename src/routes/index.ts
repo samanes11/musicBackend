@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  telegramAuth,
   register,
   login,
   getMe,
@@ -7,6 +8,8 @@ import {
   updatePassword,
   logout,
   refreshToken,
+  // pollTelegramAuth,
+  // createTelegramSession,
 } from "../controllers/authController";
 import { sendMessage, getMessages } from "../controllers/contactController";
 import {
@@ -76,6 +79,10 @@ router.post("/auth/register", authLimiter, registerValidation, register);
 router.post("/auth/login", authLimiter, loginValidation, login);
 router.post("/auth/refresh", refreshToken);
 router.get("/auth/me", authenticate, getMe);
+router.post("/auth/telegram", telegramAuth);
+// router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
+// router.post("/auth/telegram/session", createTelegramSession);
+// router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth); 
 router.put(
   "/auth/profile",
   authenticate,

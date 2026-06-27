@@ -2,35 +2,46 @@ import mongoose, { Document, Schema } from "mongoose";
 import bcrypt from "bcryptjs";
 
 export interface IUser extends Document {
-  email: string;
-  password: string;
+  telegramId: string;
+  telegramUsername?: string;
   name: string;
+  email?: string;
+  password?: string;
   isActive: boolean;
+  profileComplete: boolean;
   lastLogin: Date | null;
   refreshToken?: string;
   subscriptionPlan: string | null;
   subscriptionExpiresAt: Date | null;
+  role: string;
   comparePassword(candidatePassword: string): Promise<boolean>;
   toPublicJSON(): object;
 }
 
 const userSchema = new Schema<IUser>(
   {
+    telegramId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    telegramUsername: { type: String, default: null },
+    name: { type: String, trim: true, default: "" },
     email: {
       type: String,
-      required: [true, "Email is required"],
       unique: true,
+      sparse: true,
       lowercase: true,
       trim: true,
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
       minlength: 6,
       select: false,
     },
-    name: { type: String, trim: true, default: "" },
+    role: { type: String, default: "user" },
     isActive: { type: Boolean, default: true },
+    profileComplete: { type: Boolean, default: false },
     lastLogin: { type: Date, default: null },
     refreshToken: { type: String, select: false },
     subscriptionPlan: { type: String, default: null },
@@ -40,7 +51,7 @@ const userSchema = new Schema<IUser>(
 );
 
 userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+  if (!this.isModified("password") || !this.password) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
@@ -49,15 +60,20 @@ userSchema.pre("save", async function (next) {
 userSchema.methods.comparePassword = async function (
   candidatePassword: string,
 ): Promise<boolean> {
+  if (!this.password) return false;
   return bcrypt.compare(candidatePassword, this.password);
 };
 
 userSchema.methods.toPublicJSON = function () {
   return {
     id: this._id,
-    email: this.email,
+    telegramId: this.telegramId,
+    telegramUsername: this.telegramUsername,
     name: this.name,
+    email: this.email,
     isActive: this.isActive,
+    profileComplete: this.profileComplete,
+    role: this.role,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
     lastLogin: this.lastLogin,
@@ -66,6 +82,7 @@ userSchema.methods.toPublicJSON = function () {
   };
 };
 
+userSchema.index({ telegramId: 1 });
 userSchema.index({ email: 1 });
 
 export default mongoose.model<IUser>("User", userSchema);
