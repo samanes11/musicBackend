@@ -211,36 +211,6 @@ export const updateProfile = async (
   }
 };
 
-// ── PUT /api/auth/password (فقط برای ادمین‌ها) ─────────────────
-export const updatePassword = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    const user = await User.findById((req as any).user.id).select("+password");
-    if (!user)
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    if (!user.password)
-      return res
-        .status(400)
-        .json({ success: false, message: "No password set" });
-    const isValid = await user.comparePassword(currentPassword);
-    if (!isValid)
-      return res
-        .status(401)
-        .json({ success: false, message: "Current password incorrect" });
-    user.password = newPassword;
-    await user.save();
-    res.status(200).json({ success: true, message: "Password updated" });
-  } catch (error) {
-    next(error);
-  }
-};
-
 // ── POST /api/auth/logout ───────────────────────────────────────
 export const logout = async (
   req: Request,
@@ -287,75 +257,41 @@ export const refreshToken = async (
   }
 };
 
-// ── POST /api/auth/register (فقط برای ادمین — حذف نمیشه) ───────
-export const register = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const { email, password, name, role } = req.body;
-    const existing = await User.findOne({ email });
-    if (existing)
-      return res
-        .status(400)
-        .json({ success: false, message: "Email already exists" });
-
-    const user = await User.create({
-      email,
-      password,
-      name: name || "",
-      role: role || "user",
-      profileComplete: true,
-    });
-
-    const { accessToken, refreshToken } = generateAuthTokens(user);
-    user.refreshToken = refreshToken;
-    await user.save();
-
-    res.status(201).json({
-      success: true,
-      data: { user: user.toPublicJSON(), accessToken, refreshToken },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
 
 // ── POST /api/auth/login (فقط برای ادمین) ──────────────────────
-export const login = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email }).select("+password");
-    if (!user || !user.password)
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid credentials" });
-    if (!user.isActive)
-      return res
-        .status(401)
-        .json({ success: false, message: "Account inactive" });
+// export const login = async (
+//   req: Request,
+//   res: Response,
+//   next: NextFunction,
+// ) => {
+//   try {
+//     const { email, password } = req.body;
+//     const user = await User.findOne({ email }).select("+password");
+//     if (!user || !user.password)
+//       return res
+//         .status(401)
+//         .json({ success: false, message: "Invalid credentials" });
+//     if (!user.isActive)
+//       return res
+//         .status(401)
+//         .json({ success: false, message: "Account inactive" });
 
-    const isValid = await user.comparePassword(password);
-    if (!isValid)
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid credentials" });
+//     const isValid = await user.comparePassword(password);
+//     if (!isValid)
+//       return res
+//         .status(401)
+//         .json({ success: false, message: "Invalid credentials" });
 
-    user.lastLogin = new Date();
-    const { accessToken, refreshToken } = generateAuthTokens(user);
-    user.refreshToken = refreshToken;
-    await user.save();
+//     user.lastLogin = new Date();
+//     const { accessToken, refreshToken } = generateAuthTokens(user);
+//     user.refreshToken = refreshToken;
+//     await user.save();
 
-    res.status(200).json({
-      success: true,
-      data: { user: user.toPublicJSON(), accessToken, refreshToken },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+//     res.status(200).json({
+//       success: true,
+//       data: { user: user.toPublicJSON(), accessToken, refreshToken },
+//     });
+//   } catch (error) {
+//     next(error);
+//   }
+// };

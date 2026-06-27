@@ -1,11 +1,8 @@
 import { Router } from "express";
 import {
   telegramAuth,
-  register,
-  login,
   getMe,
   updateProfile,
-  updatePassword,
   logout,
   refreshToken,
   pollTelegramAuth,
@@ -13,9 +10,6 @@ import {
 } from "../controllers/authController";
 import { sendMessage, getMessages } from "../controllers/contactController";
 import {
-  registerValidation,
-  loginValidation,
-  updatePasswordValidation,
   updateProfileValidation,
 } from "../middleware/validators";
 import { authenticate } from "../middleware/auth";
@@ -70,16 +64,14 @@ import {
   subscriptionCallback,
 } from "../controllers/subscriptionController";
 import { adminBroadcast, deleteBotSong, disconnectBot, generateCode, getBotSongs, getBotStatus, refreshBotSongThumbnails } from "../controllers/botController";
-import { authLimiter } from "../middleware/rateLimiters";
 
 const router = Router();
 
 // ── Auth ────────────────────────────────────────────────────────
-router.post("/auth/register", authLimiter, registerValidation, register);
-router.post("/auth/login", authLimiter, loginValidation, login);
 router.post("/auth/refresh", refreshToken);
 router.get("/auth/me", authenticate, getMe);
 router.post("/auth/telegram", telegramAuth);
+// router.post("/auth/login", authLimiter, loginValidation, login);
 router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
 router.post("/auth/telegram/session", createTelegramSession); 
 router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth); 
@@ -93,8 +85,6 @@ router.put(
 router.put(
   "/auth/password",
   authenticate,
-  updatePasswordValidation,
-  updatePassword,
 );
 router.post("/auth/logout", authenticate, logout);
 
