@@ -3,10 +3,13 @@ import User from "../models/User";
 import { generateAuthTokens, verifyToken } from "../utils/jwt";
 import { applyDefaultChannelsForNewUser } from "./defaultChannelsController";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
+import mongoose from "mongoose";
 
 // ── POST /api/auth/telegram ─────────────────────────────────────
 // endpoint عمومی — بدون auth
 // بات تلگرام این رو بعد از تایید کاربر صدا میزنه
+// متد سشن تلگرام پیدا کن یا بساز
 export const telegramAuth = async (
   req: Request,
   res: Response,
@@ -67,6 +70,43 @@ export const telegramAuth = async (
     if (isNew) {
       applyDefaultChannelsForNewUser(user._id).catch(console.error);
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createTelegramSession = async (req, res, next) => {
+  try {
+    const sessionId = crypto.randomBytes(16).toString("hex");
+    const db = mongoose.connection.db;
+    await db.collection("telegram_auth_sessions").insertOne({
+      sessionId,
+      status: "pending",
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    res.json({ success: true, data: { sessionId } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const pollTelegramAuth = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    const db = mongoose.connection.db;
+    const session = await db.collection("telegram_auth_sessions").findOne({ sessionId });
+    if (!session) return res.status(404).json({ success: false, message: "Session not found" });
+    if (session.status !== "confirmed") return res.json({ success: true, data: { status: "pending" } });
+
+    const user = await db.collection("users").findOne({ _id: new mongoose.Types.ObjectId(session.userId) });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const tokens = generateAuthTokens(user);
+    await db.collection("users").updateOne({ _id: user._id }, { $set: { refreshToken: tokens.refreshToken } });
+    await db.collection("telegram_auth_sessions").deleteOne({ sessionId });
+
+    res.json({ success: true, data: { status: "confirmed", accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, user: { id: user._id, name: user.name, email: user.email } } });
   } catch (error) {
     next(error);
   }

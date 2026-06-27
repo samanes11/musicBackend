@@ -8,6 +8,8 @@ import {
   updatePassword,
   logout,
   refreshToken,
+  pollTelegramAuth,
+  createTelegramSession,
   // pollTelegramAuth,
   // createTelegramSession,
 } from "../controllers/authController";
@@ -80,9 +82,9 @@ router.post("/auth/login", authLimiter, loginValidation, login);
 router.post("/auth/refresh", refreshToken);
 router.get("/auth/me", authenticate, getMe);
 router.post("/auth/telegram", telegramAuth);
-// router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
-// router.post("/auth/telegram/session", createTelegramSession);
-// router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth); 
+router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
+router.post("/auth/telegram/session", createTelegramSession);
+
 router.put(
   "/auth/profile",
   authenticate,
