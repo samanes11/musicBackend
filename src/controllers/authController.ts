@@ -9,7 +9,6 @@ import mongoose from "mongoose";
 // ── POST /api/auth/telegram ─────────────────────────────────────
 // endpoint عمومی — بدون auth
 // بات تلگرام این رو بعد از تایید کاربر صدا میزنه
-// متد سشن تلگرام پیدا کن یا بساز
 export const telegramAuth = async (
   req: Request,
   res: Response,
@@ -21,11 +20,15 @@ export const telegramAuth = async (
     // authToken رو verify کن — باید با BOT_AUTH_SECRET امضا شده باشه
     const botSecret = process.env.BOT_AUTH_SECRET;
     if (!botSecret || authToken !== botSecret + "_" + telegramId) {
-      return res.status(401).json({ success: false, message: "Invalid auth token" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid auth token" });
     }
 
     if (!telegramId) {
-      return res.status(400).json({ success: false, message: "telegramId required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "telegramId required" });
     }
 
     let user = await User.findOne({ telegramId: telegramId.toString() });
@@ -47,7 +50,9 @@ export const telegramAuth = async (
       user.telegramUsername = telegramUsername || user.telegramUsername;
       user.lastLogin = new Date();
       if (!user.isActive) {
-        return res.status(401).json({ success: false, message: "Account inactive" });
+        return res
+          .status(401)
+          .json({ success: false, message: "Account inactive" });
       }
     }
 
@@ -75,38 +80,76 @@ export const telegramAuth = async (
   }
 };
 
-export const createTelegramSession = async (req, res, next) => {
+// ── GET /api/auth/telegram/poll/:telegramId ─────────────────────
+export const pollTelegramAuth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
-    const sessionId = crypto.randomBytes(16).toString("hex");
-    const db = mongoose.connection.db;
-    await db.collection("telegram_auth_sessions").insertOne({
-      sessionId,
-      status: "pending",
-      createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    const { sessionId } = req.params;
+    const db = (mongoose as any).connection.db;
+
+    const session = await db
+      .collection("telegram_auth_sessions")
+      .findOne({ sessionId, status: "confirmed" });
+
+    if (!session) {
+      return res.json({ success: true, confirmed: false });
+    }
+
+    // session رو بعد از خوندن حذف کن
+    await db.collection("telegram_auth_sessions").deleteOne({ sessionId });
+
+    // توکن‌ها رو بساز
+    const user = await User.findById(session.userId);
+    if (!user) {
+      return res.json({ success: true, confirmed: false });
+    }
+
+    const tokens = generateAuthTokens(user);
+    user.refreshToken = tokens.refreshToken;
+    await user.save();
+
+    res.json({
+      success: true,
+      confirmed: true,
+      data: {
+        user: user.toPublicJSON(),
+        ...tokens,
+        isNew: session.isNew,
+      },
     });
-    res.json({ success: true, data: { sessionId } });
   } catch (error) {
     next(error);
   }
 };
 
-export const pollTelegramAuth = async (req, res, next) => {
+
+// ── POST /api/auth/telegram/session ─────────────────────────────
+export const createTelegramSession = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
-    const { sessionId } = req.params;
-    const db = mongoose.connection.db;
-    const session = await db.collection("telegram_auth_sessions").findOne({ sessionId });
-    if (!session) return res.status(404).json({ success: false, message: "Session not found" });
-    if (session.status !== "confirmed") return res.json({ success: true, data: { status: "pending" } });
+    const sessionId = crypto.randomBytes(16).toString("hex");
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME!;
+    const db = (mongoose as any).connection.db;
 
-    const user = await db.collection("users").findOne({ _id: new mongoose.Types.ObjectId(session.userId) });
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    await db.collection("telegram_auth_sessions").insertOne({
+      sessionId,
+      status: "pending",
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 دقیقه
+    });
 
-    const tokens = generateAuthTokens(user);
-    await db.collection("users").updateOne({ _id: user._id }, { $set: { refreshToken: tokens.refreshToken } });
-    await db.collection("telegram_auth_sessions").deleteOne({ sessionId });
+    const telegramLink = `https://t.me/${botUsername}?start=auth_${sessionId}`;
 
-    res.json({ success: true, data: { status: "confirmed", accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, user: { id: user._id, name: user.name, email: user.email } } });
+    res.json({
+      success: true,
+      data: { sessionId, telegramLink },
+    });
   } catch (error) {
     next(error);
   }
@@ -121,10 +164,14 @@ export const getMe = async (
   try {
     const user = await User.findById((req as any).user.id);
     if (!user)
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     user.lastLogin = new Date();
     await user.save();
-    res.status(200).json({ success: true, data: { user: user.toPublicJSON() } });
+    res
+      .status(200)
+      .json({ success: true, data: { user: user.toPublicJSON() } });
   } catch (error) {
     next(error);
   }
@@ -140,10 +187,13 @@ export const updateProfile = async (
     const { name, email } = req.body;
     const user = await User.findById((req as any).user.id);
     if (!user)
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
 
     if (name !== undefined && name.trim()) user.name = name.trim();
-    if (email !== undefined && email.trim()) user.email = email.trim().toLowerCase();
+    if (email !== undefined && email.trim())
+      user.email = email.trim().toLowerCase();
 
     // پروفایل کامله اگه name داشته باشه
     if (user.name && user.name.trim().length >= 2) {
@@ -171,12 +221,18 @@ export const updatePassword = async (
     const { currentPassword, newPassword } = req.body;
     const user = await User.findById((req as any).user.id).select("+password");
     if (!user)
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     if (!user.password)
-      return res.status(400).json({ success: false, message: "No password set" });
+      return res
+        .status(400)
+        .json({ success: false, message: "No password set" });
     const isValid = await user.comparePassword(currentPassword);
     if (!isValid)
-      return res.status(401).json({ success: false, message: "Current password incorrect" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Current password incorrect" });
     user.password = newPassword;
     await user.save();
     res.status(200).json({ success: true, message: "Password updated" });
@@ -212,11 +268,15 @@ export const refreshToken = async (
   try {
     const { refreshToken } = req.body;
     if (!refreshToken)
-      return res.status(400).json({ success: false, message: "Refresh token required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Refresh token required" });
     const decoded = verifyToken(refreshToken);
     const user = await User.findById(decoded.id).select("+refreshToken");
     if (!user || user.refreshToken !== refreshToken) {
-      return res.status(401).json({ success: false, message: "Invalid refresh token" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid refresh token" });
     }
     const tokens = generateAuthTokens(user);
     user.refreshToken = tokens.refreshToken;
@@ -237,7 +297,9 @@ export const register = async (
     const { email, password, name, role } = req.body;
     const existing = await User.findOne({ email });
     if (existing)
-      return res.status(400).json({ success: false, message: "Email already exists" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Email already exists" });
 
     const user = await User.create({
       email,
@@ -270,13 +332,19 @@ export const login = async (
     const { email, password } = req.body;
     const user = await User.findOne({ email }).select("+password");
     if (!user || !user.password)
-      return res.status(401).json({ success: false, message: "Invalid credentials" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid credentials" });
     if (!user.isActive)
-      return res.status(401).json({ success: false, message: "Account inactive" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Account inactive" });
 
     const isValid = await user.comparePassword(password);
     if (!isValid)
-      return res.status(401).json({ success: false, message: "Invalid credentials" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid credentials" });
 
     user.lastLogin = new Date();
     const { accessToken, refreshToken } = generateAuthTokens(user);
