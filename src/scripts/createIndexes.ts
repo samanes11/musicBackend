@@ -120,22 +120,6 @@ async function createIndexes() {
       { name: "playlists_user_date", background: true },
     );
 
-  /* ─────────────────────────────────────────────
-     user_downloads
-  ───────────────────────────────────────────── */
-  await db
-    .collection("user_downloads")
-    .createIndex(
-      { userId: 1, status: 1 },
-      { name: "downloads_user_status", background: true },
-    );
-
-  await db
-    .collection("user_downloads")
-    .createIndex(
-      { userId: 1, songId: 1 },
-      { name: "downloads_user_song", background: true },
-    );
 
   /* ─────────────────────────────────────────────
      stream_tokens  —  TTL auto-cleanup
@@ -177,7 +161,6 @@ async function createIndexes() {
     "user_channels",
     "user_favorites",
     "user_playlists",
-    "user_downloads",
     "stream_tokens",
     "default_channels",
   ];

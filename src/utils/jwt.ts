@@ -15,7 +15,7 @@ export const verifyToken = (token: string): any => {
 export const generateAuthTokens = (user: any) => {
   const payload = { id: user._id, email: user.email };
   return {
-    accessToken: generateToken(payload, "7d"),
+    accessToken: generateToken(payload, "15m"),
     refreshToken: generateToken(payload, "30d"),
   };
 };

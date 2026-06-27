@@ -67,12 +67,13 @@ import {
   subscriptionCallback,
 } from "../controllers/subscriptionController";
 import { adminBroadcast, deleteBotSong, disconnectBot, generateCode, getBotSongs, getBotStatus, refreshBotSongThumbnails } from "../controllers/botController";
+import { authLimiter } from "../middleware/rateLimiters";
 
 const router = Router();
 
 // ── Auth ────────────────────────────────────────────────────────
-router.post("/auth/register", registerValidation, register);
-router.post("/auth/login", loginValidation, login);
+router.post("/auth/register", authLimiter, registerValidation, register);
+router.post("/auth/login", authLimiter, loginValidation, login);
 router.post("/auth/refresh", refreshToken);
 router.get("/auth/me", authenticate, getMe);
 router.put(
