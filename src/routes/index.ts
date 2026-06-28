@@ -71,7 +71,6 @@ const router = Router();
 router.post("/auth/refresh", refreshToken);
 router.get("/auth/me", authenticate, getMe);
 router.post("/auth/telegram", telegramAuth);
-// router.post("/auth/login", authLimiter, loginValidation, login);
 router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
 router.post("/auth/telegram/session", createTelegramSession); 
 router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth); 

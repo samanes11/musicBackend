@@ -7,8 +7,7 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 
 // ── POST /api/auth/telegram ─────────────────────────────────────
-// endpoint عمومی — بدون auth
-// بات تلگرام این رو بعد از تایید کاربر صدا میزنه
+
 export const telegramAuth = async (
   req: Request,
   res: Response,
@@ -17,7 +16,6 @@ export const telegramAuth = async (
   try {
     const { telegramId, telegramUsername, name, authToken } = req.body;
 
-    // authToken رو verify کن — باید با BOT_AUTH_SECRET امضا شده باشه
     const botSecret = process.env.BOT_AUTH_SECRET;
     if (!botSecret || authToken !== botSecret + "_" + telegramId) {
       return res
@@ -195,11 +193,6 @@ export const updateProfile = async (
     if (email !== undefined && email.trim())
       user.email = email.trim().toLowerCase();
 
-    // پروفایل کامله اگه name داشته باشه
-    if (user.name && user.name.trim().length >= 2) {
-      user.profileComplete = true;
-    }
-
     await user.save();
     res.status(200).json({
       success: true,
@@ -256,42 +249,3 @@ export const refreshToken = async (
     next(error);
   }
 };
-
-
-// ── POST /api/auth/login (فقط برای ادمین) ──────────────────────
-// export const login = async (
-//   req: Request,
-//   res: Response,
-//   next: NextFunction,
-// ) => {
-//   try {
-//     const { email, password } = req.body;
-//     const user = await User.findOne({ email }).select("+password");
-//     if (!user || !user.password)
-//       return res
-//         .status(401)
-//         .json({ success: false, message: "Invalid credentials" });
-//     if (!user.isActive)
-//       return res
-//         .status(401)
-//         .json({ success: false, message: "Account inactive" });
-
-//     const isValid = await user.comparePassword(password);
-//     if (!isValid)
-//       return res
-//         .status(401)
-//         .json({ success: false, message: "Invalid credentials" });
-
-//     user.lastLogin = new Date();
-//     const { accessToken, refreshToken } = generateAuthTokens(user);
-//     user.refreshToken = refreshToken;
-//     await user.save();
-
-//     res.status(200).json({
-//       success: true,
-//       data: { user: user.toPublicJSON(), accessToken, refreshToken },
-//     });
-//   } catch (error) {
-//     next(error);
-//   }
-// };

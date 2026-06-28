@@ -8,7 +8,6 @@ export interface IUser extends Document {
   email?: string;
   password?: string;
   isActive: boolean;
-  profileComplete: boolean;
   lastLogin: Date | null;
   refreshToken?: string;
   subscriptionPlan: string | null;
@@ -41,7 +40,6 @@ const userSchema = new Schema<IUser>(
     },
     role: { type: String, default: "user" },
     isActive: { type: Boolean, default: true },
-    profileComplete: { type: Boolean, default: false },
     lastLogin: { type: Date, default: null },
     refreshToken: { type: String, select: false },
     subscriptionPlan: { type: String, default: null },
@@ -72,7 +70,6 @@ userSchema.methods.toPublicJSON = function () {
     name: this.name,
     email: this.email,
     isActive: this.isActive,
-    profileComplete: this.profileComplete,
     role: this.role,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,

@@ -13,12 +13,6 @@ export const validate = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-export const loginValidation = [
-  body("email").isEmail().withMessage("Valid email required").normalizeEmail(),
-  body("password").notEmpty().withMessage("Password required"),
-  validate,
-];
-
 export const updateProfileValidation = [
   body("name").optional().trim().isLength({ min: 2 }).withMessage("Name min 2 chars"),
   body("email").optional().isEmail().withMessage("Valid email required").normalizeEmail(),
