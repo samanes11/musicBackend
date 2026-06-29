@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 export const getPlaylists = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -35,7 +35,7 @@ export const getPlaylists = async (
 export const createPlaylist = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -58,7 +58,7 @@ export const createPlaylist = async (
       name,
       description: description || null,
       coverImage: null,
-      songIds: [],          // ← source of truth; songsCount derived from this
+      songIds: [], // ← source of truth; songsCount derived from this
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -74,11 +74,60 @@ export const createPlaylist = async (
   }
 };
 
+// ── PUT /api/playlists/:id ─────────────────────────────────────
+export const updatePlaylist = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const playlistId = req.params.id;
+    const { name, description } = req.body;
+
+    if (!name || !name.toString().trim())
+      return res.status(400).json({ success: false, msg: "name required" });
+
+    const db = mongoose.connection.db;
+    const trimmedName = name.toString().trim();
+
+    const existing = await db.collection("user_playlists").findOne({
+      userId,
+      name: trimmedName,
+      _id: { $ne: new mongoose.Types.ObjectId(playlistId) },
+    });
+    if (existing)
+      return res
+        .status(400)
+        .json({ success: false, msg: "Playlist name already exists" });
+
+    const result = await db.collection("user_playlists").updateOne(
+      { _id: new mongoose.Types.ObjectId(playlistId), userId },
+      {
+        $set: {
+          name: trimmedName,
+          ...(description !== undefined ? { description } : {}),
+          updatedAt: new Date(),
+        },
+      },
+    );
+
+    if (result.matchedCount === 0)
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
+
+    res.json({ success: true, msg: "Playlist updated" });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ── DELETE /api/playlists/:id ──────────────────────────────────
 export const deletePlaylist = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -91,7 +140,9 @@ export const deletePlaylist = async (
     });
 
     if (result.deletedCount === 0)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
 
     res.json({ success: true, msg: "Playlist deleted" });
   } catch (error) {
@@ -103,13 +154,13 @@ export const deletePlaylist = async (
 export const getPlaylistSongs = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
     const playlistId = req.params.id;
     const { page = 1, limit = 50 } = req.query;
-    const pageNum  = Math.max(1, parseInt(page as string));
+    const pageNum = Math.max(1, parseInt(page as string));
     const limitNum = Math.min(200, parseInt(limit as string));
     const db = mongoose.connection.db;
 
@@ -118,23 +169,35 @@ export const getPlaylistSongs = async (
       userId,
     });
     if (!playlist)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
 
-    const songIds   = playlist.songIds ?? [];
-    const realCount = songIds.length;         // ← always accurate
-    const skip      = (pageNum - 1) * limitNum;
-    const pageIds   = songIds.slice(skip, skip + limitNum);
+    const songIds = playlist.songIds ?? [];
+    const realCount = songIds.length; // ← always accurate
+    const skip = (pageNum - 1) * limitNum;
+    const pageIds = songIds.slice(skip, skip + limitNum);
 
     const objIds = pageIds
       .map((id: string) => {
-        try { return new mongoose.Types.ObjectId(id); } catch { return null; }
+        try {
+          return new mongoose.Types.ObjectId(id);
+        } catch {
+          return null;
+        }
       })
       .filter(Boolean);
 
     // fetch from both regular songs and bot songs
     const [songs, botSongs] = await Promise.all([
-      db.collection("songs").find({ _id: { $in: objIds } }).toArray(),
-      db.collection("bot_songs").find({ _id: { $in: objIds }, userId }).toArray(),
+      db
+        .collection("songs")
+        .find({ _id: { $in: objIds } })
+        .toArray(),
+      db
+        .collection("bot_songs")
+        .find({ _id: { $in: objIds }, userId })
+        .toArray(),
     ]);
 
     const songMap = new Map(songs.map((s) => [s._id.toString(), s]));
@@ -156,20 +219,22 @@ export const getPlaylistSongs = async (
       });
     }
 
-    const ordered = pageIds.map((id: string) => songMap.get(id)).filter(Boolean);
+    const ordered = pageIds
+      .map((id: string) => songMap.get(id))
+      .filter(Boolean);
 
     res.json({
       success: true,
       data: ordered,
       playlist: {
-        _id:        playlist._id,
-        name:       playlist.name,
-        songsCount: realCount,             // ← derived, never stale
+        _id: playlist._id,
+        name: playlist.name,
+        songsCount: realCount, // ← derived, never stale
       },
-      total:      realCount,
-      page:       pageNum,
+      total: realCount,
+      page: pageNum,
       totalPages: Math.ceil(realCount / limitNum),
-      hasMore:    pageNum < Math.ceil(realCount / limitNum),
+      hasMore: pageNum < Math.ceil(realCount / limitNum),
     });
   } catch (error) {
     next(error);
@@ -180,7 +245,7 @@ export const getPlaylistSongs = async (
 export const addSongToPlaylist = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -195,13 +260,13 @@ export const addSongToPlaylist = async (
       {
         _id: new mongoose.Types.ObjectId(playlistId),
         userId,
-        songIds: { $ne: songId },          // only add if not already present
+        songIds: { $ne: songId }, // only add if not already present
       },
       {
         $push: { songIds: songId } as any,
-        $set:  { updatedAt: new Date() },
+        $set: { updatedAt: new Date() },
         // songsCount intentionally NOT updated — derived from songIds.length
-      }
+      },
     );
 
     if (result.matchedCount === 0) {
@@ -211,7 +276,9 @@ export const addSongToPlaylist = async (
         userId,
       });
       if (!exists)
-        return res.status(404).json({ success: false, msg: "Playlist not found" });
+        return res
+          .status(404)
+          .json({ success: false, msg: "Playlist not found" });
       return res
         .status(400)
         .json({ success: false, msg: "Song already in playlist" });
@@ -227,7 +294,7 @@ export const addSongToPlaylist = async (
 export const removeSongFromPlaylist = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -238,12 +305,14 @@ export const removeSongFromPlaylist = async (
       { _id: new mongoose.Types.ObjectId(playlistId), userId },
       {
         $pull: { songIds: songId } as any,
-        $set:  { updatedAt: new Date() },
-      }
+        $set: { updatedAt: new Date() },
+      },
     );
 
     if (result.matchedCount === 0)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
 
     res.json({ success: true, msg: "Song removed from playlist" });
   } catch (error) {
@@ -255,7 +324,7 @@ export const removeSongFromPlaylist = async (
 export const reorderPlaylist = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -263,17 +332,23 @@ export const reorderPlaylist = async (
     const { songIds } = req.body;
 
     if (!Array.isArray(songIds)) {
-      return res.status(400).json({ success: false, msg: "songIds array required" });
+      return res
+        .status(400)
+        .json({ success: false, msg: "songIds array required" });
     }
 
     const db = mongoose.connection.db;
-    const result = await db.collection("user_playlists").updateOne(
-      { _id: new mongoose.Types.ObjectId(playlistId), userId },
-      { $set: { songIds, updatedAt: new Date() } }
-    );
+    const result = await db
+      .collection("user_playlists")
+      .updateOne(
+        { _id: new mongoose.Types.ObjectId(playlistId), userId },
+        { $set: { songIds, updatedAt: new Date() } },
+      );
 
     if (result.matchedCount === 0) {
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
     }
 
     res.json({ success: true, msg: "Playlist reordered" });

@@ -34,6 +34,7 @@ import {
   addSongToPlaylist,
   removeSongFromPlaylist,
   reorderPlaylist,
+  updatePlaylist,
 } from "../controllers/playlistsController";
 import {
   streamSong,
@@ -167,6 +168,7 @@ router.post("/favorites/toggle", authenticate, toggleFavorite);
 // ── Playlists ───────────────────────────────────────────────────
 router.get("/playlists", authenticate, getPlaylists);
 router.post("/playlists", authenticate, createPlaylist);
+router.put("/playlists/:id", authenticate, updatePlaylist);
 router.delete("/playlists/:id", authenticate, deletePlaylist);
 router.get("/playlists/:id/songs", authenticate, getPlaylistSongs);
 router.post("/playlists/:id/songs", authenticate, addSongToPlaylist);

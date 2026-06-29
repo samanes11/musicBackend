@@ -69,17 +69,18 @@ export const getSongs = async (
       }
     }
 
-    const [total, songs] = await Promise.all([
-      db.collection("songs").countDocuments(query),
-      db
-        .collection("songs")
-        .find(query)
-        .sort(sort)
-        .skip(skip)
-        .limit(limitNum)
-        .toArray(),
-    ]);
+    const [result] = await db.collection("songs").aggregate([
+      { $match: query },
+      {
+        $facet: {
+          meta: [{ $count: "total" }],
+          data: [{ $sort: sort }, { $skip: skip }, { $limit: limitNum }],
+        },
+      },
+    ]).toArray();
 
+    const total = result.meta[0]?.total ?? 0;
+    const songs = result.data ?? [];
     const totalPages = Math.ceil(total / limitNum);
 
     res.json({
