@@ -136,6 +136,18 @@ export const removeChannel = async (req, res, next) => {
       return res.status(404).json({ success: false, msg: "Channel not found" });
     }
 
+    const isDefault = await db
+      .collection("default_channels")
+      .findOne({ channelUsername: username });
+
+    if (isDefault) {
+      await db.collection("user_deleted_default_channels").updateOne(
+        { userId, channelUsername: username },
+        { $set: { userId, channelUsername: username, deletedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+
     res.json({ success: true, msg: "Channel removed" });
   } catch (error) {
     next(error);

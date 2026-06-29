@@ -64,18 +64,29 @@ export const applyDefaultChannelsToAllUsers = async (
     for (const user of users) {
       const userId = user._id.toString();
 
-      const existingChannels = await db
-        .collection("user_channels")
-        .find({ userId })
-        .project({ channelUsername: 1 })
-        .toArray();
+      const [existingChannels, deletedDefaults] = await Promise.all([
+        db
+          .collection("user_channels")
+          .find({ userId })
+          .project({ channelUsername: 1 })
+          .toArray(),
+        db
+          .collection("user_deleted_default_channels")
+          .find({ userId })
+          .project({ channelUsername: 1 })
+          .toArray(),
+      ]);
 
       const existingUsernames = new Set(
         existingChannels.map((c: any) => c.channelUsername),
       );
+      const deletedUsernames = new Set(
+        deletedDefaults.map((d: any) => d.channelUsername),
+      );
 
       for (const dc of defaults) {
         if (existingUsernames.has(dc.username)) continue;
+        if (deletedUsernames.has(dc.username)) continue; // ← عمداً حذف کرده
         const result = await addChannelForUser(
           userId,
           dc.username,
@@ -97,21 +108,18 @@ export const applyDefaultChannelsToAllUsers = async (
   }
 };
 
-// ── Internal helper: بعد از register هر کاربر جدید صدا زده میشه ──
 export async function applyDefaultChannelsForNewUser(
   userId: any,
 ): Promise<void> {
   try {
     const db = mongoose.connection.db;
-
-    // از MongoDB بخون نه env
     const defaults = await db.collection("default_channels").find().toArray();
 
     for (const dc of defaults) {
       await addChannelForUser(
         userId.toString(),
         dc.channelUsername,
-        dc.channelName, 
+        dc.channelName,
         db,
       );
     }

@@ -150,6 +150,13 @@ async function createIndexes() {
     },
   );
 
+  await db
+    .collection("user_deleted_default_channels")
+    .createIndex(
+      { userId: 1, channelUsername: 1 },
+      { unique: true, name: "user_deleted_defaults_unique", background: true },
+    );
+
   /* ─────────────────────────────────────────────
      Summary
   ───────────────────────────────────────────── */
