@@ -74,7 +74,6 @@ router.get("/auth/me", authenticate, getMe);
 router.post("/auth/telegram", telegramAuth);
 router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
 router.post("/auth/telegram/session", createTelegramSession); 
-router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth); 
 
 router.put(
   "/auth/profile",
