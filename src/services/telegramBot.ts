@@ -26,7 +26,7 @@ export function generateConnectionCode(userId: string): string {
   return code;
 }
 
-bot.onText(/^\/start$/, async (msg) => {
+bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const telegramId = msg.from.id.toString();
   const telegramUsername = msg.from.username || "";
