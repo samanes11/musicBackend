@@ -123,7 +123,6 @@ export const pollTelegramAuth = async (
   }
 };
 
-
 // ── POST /api/auth/telegram/session ─────────────────────────────
 export const createTelegramSession = async (
   req: Request,
@@ -167,6 +166,25 @@ export const getMe = async (
         .json({ success: false, message: "User not found" });
     user.lastLogin = new Date();
     await user.save();
+    try {
+      const rawToken = (req.headers.authorization || "").split(" ")[1] || "";
+      if (rawToken) {
+        const crypto = require("crypto");
+        const tokenHash = crypto
+          .createHash("sha256")
+          .update(rawToken)
+          .digest("hex")
+          .slice(0, 20);
+        const dbConn = (mongoose as any).connection.db;
+        dbConn
+          .collection("user_sessions")
+          .updateOne(
+            { userId: user._id.toString(), tokenHash },
+            { $set: { lastActive: new Date() } },
+          )
+          .catch(() => {});
+      }
+    } catch (_) {}
     res
       .status(200)
       .json({ success: true, data: { user: user.toPublicJSON() } });
@@ -190,8 +208,6 @@ export const updateProfile = async (
         .json({ success: false, message: "User not found" });
 
     if (name !== undefined && name.trim()) user.name = name.trim();
-    if (email !== undefined && email.trim())
-      user.email = email.trim().toLowerCase();
 
     await user.save();
     res.status(200).json({
@@ -245,6 +261,108 @@ export const refreshToken = async (
     user.refreshToken = tokens.refreshToken;
     await user.save();
     res.status(200).json({ success: true, data: tokens });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/auth/session/register
+export const registerSession = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const { deviceName, platform, deviceId } = req.body;
+    const db = (mongoose as any).connection.db;
+    const rawToken = (req.headers.authorization || "").split(" ")[1] || "";
+    const crypto = require("crypto");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex")
+      .slice(0, 20);
+
+    await db.collection("user_sessions").updateOne(
+      { userId, tokenHash },
+      {
+        $set: {
+          userId,
+          deviceName: deviceName || "Unknown Device",
+          platform: platform || "Unknown",
+          deviceId: deviceId || "",
+          tokenHash,
+          lastActive: new Date(),
+          isActive: true,
+        },
+        $setOnInsert: { createdAt: new Date() },
+      },
+      { upsert: true },
+    );
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /api/auth/sessions
+export const getUserSessions = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const rawToken = (req.headers.authorization || "").split(" ")[1] || "";
+    const crypto = require("crypto");
+    const currentTokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex")
+      .slice(0, 20);
+    const db = (mongoose as any).connection.db;
+
+    const sessions = await db
+      .collection("user_sessions")
+      .find({ userId, isActive: true })
+      .sort({ lastActive: -1 })
+      .toArray();
+
+    res.json({
+      success: true,
+      data: sessions.map((s: any) => ({
+        _id: s._id.toString(),
+        deviceName: s.deviceName,
+        platform: s.platform,
+        lastActive: s.lastActive,
+        createdAt: s.createdAt,
+        isCurrent: s.tokenHash === currentTokenHash,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE /api/auth/sessions/:id
+export const deleteUserSession = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const { id } = req.params;
+    const db = (mongoose as any).connection.db;
+
+    await db
+      .collection("user_sessions")
+      .updateOne(
+        { _id: new mongoose.Types.ObjectId(id), userId },
+        { $set: { isActive: false } },
+      );
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

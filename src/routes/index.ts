@@ -7,11 +7,12 @@ import {
   refreshToken,
   pollTelegramAuth,
   createTelegramSession,
+  registerSession, 
+  getUserSessions,
+  deleteUserSession,
 } from "../controllers/authController";
 import { sendMessage, getMessages } from "../controllers/contactController";
-import {
-  updateProfileValidation,
-} from "../middleware/validators";
+import { updateProfileValidation } from "../middleware/validators";
 import { authenticate } from "../middleware/auth";
 import {
   getUserChannels,
@@ -64,7 +65,15 @@ import {
   getSubscriptionStatus,
   subscriptionCallback,
 } from "../controllers/subscriptionController";
-import { adminBroadcast, deleteBotSong, disconnectBot, generateCode, getBotSongs, getBotStatus, refreshBotSongThumbnails } from "../controllers/botController";
+import {
+  adminBroadcast,
+  deleteBotSong,
+  disconnectBot,
+  generateCode,
+  getBotSongs,
+  getBotStatus,
+  refreshBotSongThumbnails,
+} from "../controllers/botController";
 
 const router = Router();
 
@@ -73,7 +82,7 @@ router.post("/auth/refresh", refreshToken);
 router.get("/auth/me", authenticate, getMe);
 router.post("/auth/telegram", telegramAuth);
 router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
-router.post("/auth/telegram/session", createTelegramSession); 
+router.post("/auth/telegram/session", createTelegramSession);
 
 router.put(
   "/auth/profile",
@@ -81,11 +90,10 @@ router.put(
   updateProfileValidation,
   updateProfile,
 );
-router.put(
-  "/auth/password",
-  authenticate,
-);
 router.post("/auth/logout", authenticate, logout);
+router.post("/auth/session/register", authenticate, registerSession);
+router.get("/auth/sessions", authenticate, getUserSessions);
+router.delete("/auth/sessions/:id", authenticate, deleteUserSession);
 
 // ── Admin: Default Channels ─────────────────────────────────────
 router.get("/admin/default-channels", adminAuth, listDefaultChannels);
@@ -203,6 +211,10 @@ router.delete("/bot/disconnect", authenticate, disconnectBot);
 router.get("/bot/songs", authenticate, getBotSongs);
 router.delete("/bot/songs/:id", authenticate, deleteBotSong);
 router.post("/admin/bot/broadcast", adminAuth, adminBroadcast);
-router.get("/bot/songs/refresh-thumbnails", authenticate, refreshBotSongThumbnails);
+router.get(
+  "/bot/songs/refresh-thumbnails",
+  authenticate,
+  refreshBotSongThumbnails,
+);
 
 export default router;

@@ -26,154 +26,12 @@ export function generateConnectionCode(userId: string): string {
   return code;
 }
 
-// bot.onText(/\/start/, async (msg) => {
-//   const chatId = msg.chat.id;
-//   const telegramId = msg.from.id.toString();
-//   const telegramUsername = msg.from.username || "";
-//   const name = [msg.from.first_name, msg.from.last_name]
-//     .filter(Boolean)
-//     .join(" ");
-
-//   const db = mongoose.connection.db;
-
-//   // Check if user came via deep link (e.g. /start auth)
-//   const payload = msg.text?.split(" ")[1];
-
-//   if (payload === "auth" || !payload) {
-//     try {
-//       const authToken = `${BOT_AUTH_SECRET}_${telegramId}`;
-
-//       const res = await axios.post(`${API_BASE}/auth/telegram`, {
-//         telegramId,
-//         telegramUsername,
-//         name,
-//         authToken,
-//       });
-
-//       const { isNew, user } = res.data.data;
-
-//       // Save auth session for Flutter polling
-//       await db.collection("telegram_auth_sessions").updateOne(
-//         { telegramId },
-//         {
-//           $set: {
-//             telegramId,
-//             status: "confirmed",
-//             userId: user.id,
-//             isNew,
-//             confirmedAt: new Date(),
-//             expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
-//           },
-//         },
-//         { upsert: true },
-//       );
-
-//       if (isNew) {
-//         await bot.sendMessage(
-//           chatId,
-//           `🎵 *Welcome to Tel Player!*\n\n` +
-//             `Your account has been successfully created.\n` +
-//             `You can now return to the app and continue.`,
-//           { parse_mode: "Markdown" },
-//         );
-//       } else {
-//         await bot.sendMessage(
-//           chatId,
-//           `✅ *Authentication Successful*\n\n` +
-//             `Welcome back to Tel Player.\n` +
-//             `Please return to the app to continue.`,
-//           { parse_mode: "Markdown" },
-//         );
-//       }
-//     } catch (err) {
-//       console.error("Telegram auth failed:", err.message);
-
-//       await bot.sendMessage(
-//         chatId,
-//         `❌ *Authentication Failed*\n\n` +
-//           `We were unable to complete your authentication.\n` +
-//           `Please try again in a few moments.`,
-//         { parse_mode: "Markdown" },
-//       );
-//     }
-
-//     return;
-//   }
-// });
-
-// bot.onText(/\/start (.+)/, async (msg, match) => {
-//   const payload = match?.[1];
-
-//   if (!payload) return;
-
-//   if (payload.startsWith("auth_")) {
-//     const sessionId = payload.replace("auth_", "");
-//     const telegramId = msg.from.id.toString();
-//     const telegramUsername = msg.from.username || "";
-//     const name = [msg.from.first_name, msg.from.last_name]
-//       .filter(Boolean)
-//       .join(" ");
-
-//     const db = mongoose.connection.db;
-
-//     try {
-//       const authToken = `${BOT_AUTH_SECRET}_${telegramId}`;
-
-//       const res = await axios.post(`${API_BASE}/auth/telegram`, {
-//         telegramId,
-//         telegramUsername,
-//         name,
-//         authToken,
-//       });
-
-//       const { isNew, user } = res.data.data;
-
-//       // Update auth session
-//       await db.collection("telegram_auth_sessions").updateOne(
-//         { sessionId },
-//         {
-//           $set: {
-//             status: "confirmed",
-//             telegramId,
-//             userId: user.id,
-//             isNew,
-//             confirmedAt: new Date(),
-//           },
-//         },
-//       );
-
-//       await bot.sendMessage(
-//         msg.chat.id,
-//         isNew
-//           ? `🎵 *Welcome to Tel Player!*\n\n` +
-//               `Your account has been successfully created.\n` +
-//               `Please return to the app to continue.`
-//           : `✅ *Authentication Successful*\n\n` +
-//               `Welcome back to Tel Player.\n` +
-//               `Please return to the app to continue.`,
-//         { parse_mode: "Markdown" },
-//       );
-//     } catch (err) {
-//       console.error("Telegram auth failed:", err.message);
-
-//       await bot.sendMessage(
-//         msg.chat.id,
-//         `❌ *Authentication Failed*\n\n` +
-//           `We were unable to complete your authentication.\n` +
-//           `Please try again in a few moments.`,
-//         { parse_mode: "Markdown" },
-//       );
-//     }
-//   }
-// });
-
-
 bot.onText(/^\/start(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const telegramId = msg.from.id.toString();
   const telegramUsername = msg.from.username || "";
   const name = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(" ");
-  const payload = match?.[1]; // undefined اگه فقط "/start" باشه
+  const payload = match?.[1]; 
   const db = mongoose.connection.db;
 
   try {
@@ -199,7 +57,7 @@ bot.onText(/^\/start(?:\s+(.+))?$/, async (msg, match) => {
             confirmedAt: new Date(),
           },
         },
-        { upsert: true }, // ← این هم اضافه کن، قبلاً نبود
+        { upsert: true }, 
       );
     } else {
       await db.collection("telegram_auth_sessions").updateOne(
@@ -228,7 +86,7 @@ bot.onText(/^\/start(?:\s+(.+))?$/, async (msg, match) => {
   } catch (err) {
     console.error(
       "Telegram auth failed:",
-      err.response?.data || err.message,   // ← الان خطای واقعی سرور رو می‌بینی
+      err.response?.data || err.message,
     );
     await bot.sendMessage(
       chatId,

@@ -15,6 +15,4 @@ export const validate = (req: Request, res: Response, next: NextFunction) => {
 
 export const updateProfileValidation = [
   body("name").optional().trim().isLength({ min: 2 }).withMessage("Name min 2 chars"),
-  body("email").optional().isEmail().withMessage("Valid email required").normalizeEmail(),
-  validate,
 ];
