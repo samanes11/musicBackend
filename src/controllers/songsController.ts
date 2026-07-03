@@ -9,6 +9,7 @@ export const getSongs = async (
 ) => {
   try {
     const userId = (req as any).user.id;
+    const userIdStr = userId.toString();
     const { page = 1, limit = 50, search, sortBy, channelUsername } = req.query;
     const db = mongoose.connection.db;
     const pageNum = Math.max(1, parseInt(page as string));
@@ -19,7 +20,7 @@ export const getSongs = async (
 
     if (channelUsername) {
       const hasChannel = await db.collection("user_channels").findOne({
-        userId: userId.toString(),
+        userId: userIdStr,
         channelUsername: channelUsername,
       });
       if (!hasChannel) {
@@ -36,45 +37,87 @@ export const getSongs = async (
     } else {
       const userChannels = await db
         .collection("user_channels")
-        .find({ userId: userId.toString() })
+        .find({ userId: userIdStr })
         .project({ channelUsername: 1 })
         .toArray();
 
-      if (userChannels.length === 0) {
-        return res.json({
-          success: true,
-          data: [],
-          total: 0,
-          page: pageNum,
-          totalPages: 0,
-          hasMore: false,
-        });
-      }
-
-      query.channelUsername = {
-        $in: userChannels.map((ch) => ch.channelUsername),
-      };
+      query.channelUsername = { $in: userChannels.map((ch) => ch.channelUsername) };
     }
 
     let sort: Record<string, any> = { messageDate: -1 };
     if (sortBy === "title") sort = { title: 1 };
     else if (sortBy === "artist") sort = { artist: 1 };
 
-    // ── سرچ ایندکس‌محور — جایگزین regex/COLLSCAN ──────────────
     const rawSearch = search;
+    let hasSearch = false;
     if (typeof rawSearch === "string" && rawSearch.trim()) {
+      hasSearch = true;
       const { clauses } = buildSearchQuery(rawSearch);
       if (clauses.length > 0) {
         query.$and = clauses;
       }
     }
 
+    const includeBotSongs = !channelUsername && !hasSearch && !sortBy;
+
+    if (!includeBotSongs) {
+      const [result] = await db.collection("songs").aggregate([
+        { $match: query },
+        {
+          $facet: {
+            meta: [{ $count: "total" }],
+            data: [{ $sort: sort }, { $skip: skip }, { $limit: limitNum }],
+          },
+        },
+      ]).toArray();
+
+      const total = result.meta[0]?.total ?? 0;
+      const songs = result.data ?? [];
+      const totalPages = Math.ceil(total / limitNum);
+
+      return res.json({
+        success: true,
+        data: songs,
+        total,
+        page: pageNum,
+        totalPages,
+        hasMore: pageNum < totalPages,
+      });
+    }
+
     const [result] = await db.collection("songs").aggregate([
       { $match: query },
+      { $addFields: { _sortDate: "$messageDate" } },
+      {
+        $unionWith: {
+          coll: "bot_songs",
+          pipeline: [
+            { $match: { userId: userIdStr } },
+            {
+              $project: {
+                _id: 1,
+                channelDbId: { $toString: "$_id" },
+                channelUsername: 1,
+                channelName: { $literal: "Bot Inbox" },
+                title: 1,
+                artist: 1,
+                duration: 1,
+                fileId: 1,
+                fileSize: 1,
+                mimeType: 1,
+                thumbnail: 1,
+                messageId: 1,
+                _sortDate: "$receivedAt",
+              },
+            },
+          ],
+        },
+      },
+      { $sort: { _sortDate: -1 } },
       {
         $facet: {
           meta: [{ $count: "total" }],
-          data: [{ $sort: sort }, { $skip: skip }, { $limit: limitNum }],
+          data: [{ $skip: skip }, { $limit: limitNum }],
         },
       },
     ]).toArray();
@@ -95,7 +138,6 @@ export const getSongs = async (
     next(error);
   }
 };
-
 // ── GET /api/songs/:id ─────────────────────────────────────────
 export const getSongById = async (
   req: Request,
