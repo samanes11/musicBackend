@@ -120,6 +120,24 @@ async function createIndexes() {
       { name: "playlists_user_date", background: true },
     );
 
+  await db
+    .collection("play_history")
+    .createIndex(
+      { userId: 1, songId: 1 },
+      { unique: true, name: "play_history_user_song_unique", background: true },
+    );
+  await db
+    .collection("play_history")
+    .createIndex(
+      { userId: 1, playCount: -1 },
+      { name: "play_history_user_count", background: true },
+    );
+  await db
+    .collection("play_history")
+    .createIndex(
+      { userId: 1, lastPlayedAt: -1 },
+      { name: "play_history_user_recent", background: true },
+    );
 
   /* ─────────────────────────────────────────────
      stream_tokens  —  TTL auto-cleanup

@@ -7,7 +7,7 @@ import {
   refreshToken,
   pollTelegramAuth,
   createTelegramSession,
-  registerSession, 
+  registerSession,
   getUserSessions,
   deleteUserSession,
   refreshTelegramUsername,
@@ -75,6 +75,11 @@ import {
   getBotStatus,
   refreshBotSongThumbnails,
 } from "../controllers/botController";
+import {
+  getMostPlayed,
+  getRecentlyPlayed,
+  recordPlay,
+} from "../controllers/playHistoryController";
 
 const router = Router();
 
@@ -95,7 +100,11 @@ router.post("/auth/logout", authenticate, logout);
 router.post("/auth/session/register", authenticate, registerSession);
 router.get("/auth/sessions", authenticate, getUserSessions);
 router.delete("/auth/sessions/:id", authenticate, deleteUserSession);
-router.get("/auth/telegram/refresh-username", authenticate, refreshTelegramUsername);
+router.get(
+  "/auth/telegram/refresh-username",
+  authenticate,
+  refreshTelegramUsername,
+);
 
 // ── Admin: Default Channels ─────────────────────────────────────
 router.get("/admin/default-channels", adminAuth, listDefaultChannels);
@@ -194,6 +203,11 @@ router.get("/stream/token/:songId", authenticate, issueStreamToken);
 router.get("/stream/admin/stats", authenticate, getCacheStats);
 router.post("/stream", authenticate, streamSong);
 router.get("/stream/:token", streamByToken);
+
+// ── play-history ──────────────────────────────────────────────────────
+router.post("/play-history", authenticate, recordPlay);
+router.get("/play-history/most-played", authenticate, getMostPlayed);
+router.get("/play-history/recent", authenticate, getRecentlyPlayed);
 
 // ── Contact ─────────────────────────────────────────────────────
 router.post("/contact", authenticate, sendMessage);
