@@ -284,6 +284,25 @@ export const registerSession = async (
       .digest("hex")
       .slice(0, 20);
 
+    // ← بلوک جدید: چک محدودیت ۳ دیوایس
+    const existing = await db
+      .collection("user_sessions")
+      .findOne({ userId, tokenHash });
+
+    if (!existing) {
+      const MAX_DEVICES = 3;
+      const activeCount = await db
+        .collection("user_sessions")
+        .countDocuments({ userId, isActive: true });
+
+      if (activeCount >= MAX_DEVICES) {
+        return res.status(403).json({
+          success: false,
+          message: `You already have ${MAX_DEVICES} devices logged in. Please log out from another device first.`,
+        });
+      }
+    }
+
     await db.collection("user_sessions").updateOne(
       { userId, tokenHash },
       {
@@ -305,7 +324,6 @@ export const registerSession = async (
     next(error);
   }
 };
-
 // GET /api/auth/sessions
 export const getUserSessions = async (
   req: Request,
