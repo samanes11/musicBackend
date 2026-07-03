@@ -284,7 +284,6 @@ export const registerSession = async (
       .digest("hex")
       .slice(0, 20);
 
-    // ← بلوک جدید: چک محدودیت ۳ دیوایس
     const existing = await db
       .collection("user_sessions")
       .findOne({ userId, tokenHash });
