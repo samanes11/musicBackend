@@ -12,8 +12,8 @@ export const verifyToken = (token: string): any => {
   }
 };
 
-export const generateAuthTokens = (user: any) => {
-  const payload = { id: user._id, email: user.email };
+export const generateAuthTokens = (user: any, sessionId: string) => {
+  const payload = { id: user._id, email: user.email, sid: sessionId };
   return {
     accessToken: generateToken(payload, "15m"),
     refreshToken: generateToken(payload, "30d"),

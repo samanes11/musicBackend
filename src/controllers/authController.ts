@@ -7,6 +7,11 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import bot from "../services/telegramBot";
 
+const MAX_DEVICES = 3;
+function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
 // ── POST /api/auth/telegram ─────────────────────────────────────
 
 export const telegramAuth = async (
@@ -16,14 +21,12 @@ export const telegramAuth = async (
 ) => {
   try {
     const { telegramId, telegramUsername, name, authToken } = req.body;
-
     const botSecret = process.env.BOT_AUTH_SECRET;
     if (!botSecret || authToken !== botSecret + "_" + telegramId) {
       return res
         .status(401)
         .json({ success: false, message: "Invalid auth token" });
     }
-
     if (!telegramId) {
       return res
         .status(400)
@@ -34,7 +37,6 @@ export const telegramAuth = async (
     let isNew = false;
 
     if (!user) {
-      // ریجستر جدید
       user = await User.create({
         telegramId: telegramId.toString(),
         telegramUsername: telegramUsername || null,
@@ -45,9 +47,7 @@ export const telegramAuth = async (
       });
       isNew = true;
     } else {
-      // آپدیت اطلاعات تلگرام
       user.telegramUsername = telegramUsername || user.telegramUsername;
-      user.lastLogin = new Date();
       if (!user.isActive) {
         return res
           .status(401)
@@ -55,30 +55,20 @@ export const telegramAuth = async (
       }
     }
 
-    const { accessToken, refreshToken } = generateAuthTokens(user);
-    user.refreshToken = refreshToken;
     user.lastLogin = new Date();
     await user.save();
 
     res.status(isNew ? 201 : 200).json({
       success: true,
       message: isNew ? "Registered successfully" : "Login successful",
-      data: {
-        user: user.toPublicJSON(),
-        accessToken,
-        refreshToken,
-        isNew,
-      },
+      data: { user: user.toPublicJSON(), isNew },
     });
 
-    if (isNew) {
-      applyDefaultChannelsForNewUser(user._id).catch(console.error);
-    }
+    if (isNew) applyDefaultChannelsForNewUser(user._id).catch(console.error);
   } catch (error) {
     next(error);
   }
 };
-
 // ── GET /api/auth/telegram/poll/:telegramId ─────────────────────
 export const pollTelegramAuth = async (
   req: Request,
@@ -93,37 +83,48 @@ export const pollTelegramAuth = async (
       .collection("telegram_auth_sessions")
       .findOne({ sessionId, status: "confirmed" });
 
-    if (!session) {
-      return res.json({ success: true, confirmed: false });
-    }
+    if (!session) return res.json({ success: true, confirmed: false });
 
-    // session رو بعد از خوندن حذف کن
     await db.collection("telegram_auth_sessions").deleteOne({ sessionId });
 
-    // توکن‌ها رو بساز
     const user = await User.findById(session.userId);
-    if (!user) {
-      return res.json({ success: true, confirmed: false });
+    if (!user) return res.json({ success: true, confirmed: false });
+
+    const activeCount = await db
+      .collection("user_sessions")
+      .countDocuments({ userId: user._id.toString(), isActive: true });
+
+    if (activeCount >= MAX_DEVICES) {
+      return res.status(403).json({
+        success: false,
+        message: `You already have ${MAX_DEVICES} devices logged in. Please log out from another device first.`,
+      });
     }
 
-    const tokens = generateAuthTokens(user);
-    user.refreshToken = tokens.refreshToken;
-    await user.save();
+    const sid = new mongoose.Types.ObjectId().toString();
+    const tokens = generateAuthTokens(user, sid);
+
+    await db.collection("user_sessions").insertOne({
+      _id: sid,
+      userId: user._id.toString(),
+      refreshTokenHash: hashToken(tokens.refreshToken),
+      deviceName: "Unknown Device",
+      platform: "Unknown",
+      deviceId: "",
+      isActive: true,
+      createdAt: new Date(),
+      lastActive: new Date(),
+    });
 
     res.json({
       success: true,
       confirmed: true,
-      data: {
-        user: user.toPublicJSON(),
-        ...tokens,
-        isNew: session.isNew,
-      },
+      data: { user: user.toPublicJSON(), ...tokens, isNew: session.isNew },
     });
   } catch (error) {
     next(error);
   }
 };
-
 // ── POST /api/auth/telegram/session ─────────────────────────────
 export const createTelegramSession = async (
   req: Request,
@@ -167,25 +168,15 @@ export const getMe = async (
         .json({ success: false, message: "User not found" });
     user.lastLogin = new Date();
     await user.save();
-    try {
-      const rawToken = (req.headers.authorization || "").split(" ")[1] || "";
-      if (rawToken) {
-        const crypto = require("crypto");
-        const tokenHash = crypto
-          .createHash("sha256")
-          .update(rawToken)
-          .digest("hex")
-          .slice(0, 20);
-        const dbConn = (mongoose as any).connection.db;
-        dbConn
-          .collection("user_sessions")
-          .updateOne(
-            { userId: user._id.toString(), tokenHash },
-            { $set: { lastActive: new Date() } },
-          )
-          .catch(() => {});
-      }
-    } catch (_) {}
+
+    const sessionId = (req as any).sessionId;
+    if (sessionId) {
+      (mongoose as any).connection.db
+        .collection("user_sessions")
+        .updateOne({ _id: sessionId }, { $set: { lastActive: new Date() } })
+        .catch(() => {});
+    }
+
     res
       .status(200)
       .json({ success: true, data: { user: user.toPublicJSON() } });
@@ -193,7 +184,6 @@ export const getMe = async (
     next(error);
   }
 };
-
 // ── PUT /api/auth/profile ───────────────────────────────────────
 export const updateProfile = async (
   req: Request,
@@ -228,10 +218,11 @@ export const logout = async (
   next: NextFunction,
 ) => {
   try {
-    const user = await User.findById((req as any).user.id);
-    if (user) {
-      user.refreshToken = undefined;
-      await user.save();
+    const sessionId = (req as any).sessionId;
+    if (sessionId) {
+      await (mongoose as any).connection.db
+        .collection("user_sessions")
+        .updateOne({ _id: sessionId }, { $set: { isActive: false } });
     }
     res.status(200).json({ success: true, message: "Logout successful" });
   } catch (error) {
@@ -251,16 +242,47 @@ export const refreshToken = async (
       return res
         .status(400)
         .json({ success: false, message: "Refresh token required" });
-    const decoded = verifyToken(refreshToken);
-    const user = await User.findById(decoded.id).select("+refreshToken");
-    if (!user || user.refreshToken !== refreshToken) {
+
+    let decoded: any;
+    try {
+      decoded = verifyToken(refreshToken);
+    } catch {
       return res
         .status(401)
         .json({ success: false, message: "Invalid refresh token" });
     }
-    const tokens = generateAuthTokens(user);
-    user.refreshToken = tokens.refreshToken;
-    await user.save();
+
+    const sid = decoded.sid;
+    const db = (mongoose as any).connection.db;
+    const session = sid
+      ? await db
+          .collection("user_sessions")
+          .findOne({ _id: sid, isActive: true })
+      : null;
+
+    if (!session || session.refreshTokenHash !== hashToken(refreshToken)) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid refresh token" });
+    }
+
+    const user = await User.findById(decoded.id);
+    if (!user)
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid refresh token" });
+
+    const tokens = generateAuthTokens(user, sid);
+    await db.collection("user_sessions").updateOne(
+      { _id: sid },
+      {
+        $set: {
+          refreshTokenHash: hashToken(tokens.refreshToken),
+          lastActive: new Date(),
+        },
+      },
+    );
+
     res.status(200).json({ success: true, data: tokens });
   } catch (error) {
     next(error);
@@ -274,50 +296,20 @@ export const registerSession = async (
   next: NextFunction,
 ) => {
   try {
-    const userId = (req as any).user.id.toString();
+    const sessionId = (req as any).sessionId;
+    if (!sessionId) return res.json({ success: true });
+
     const { deviceName, platform, deviceId } = req.body;
-    const db = (mongoose as any).connection.db;
-    const rawToken = (req.headers.authorization || "").split(" ")[1] || "";
-    const crypto = require("crypto");
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(rawToken)
-      .digest("hex")
-      .slice(0, 20);
-
-    const existing = await db
-      .collection("user_sessions")
-      .findOne({ userId, tokenHash });
-
-    if (!existing) {
-      const MAX_DEVICES = 3;
-      const activeCount = await db
-        .collection("user_sessions")
-        .countDocuments({ userId, isActive: true });
-
-      if (activeCount >= MAX_DEVICES) {
-        return res.status(403).json({
-          success: false,
-          message: `You already have ${MAX_DEVICES} devices logged in. Please log out from another device first.`,
-        });
-      }
-    }
-
-    await db.collection("user_sessions").updateOne(
-      { userId, tokenHash },
+    await (mongoose as any).connection.db.collection("user_sessions").updateOne(
+      { _id: sessionId },
       {
         $set: {
-          userId,
           deviceName: deviceName || "Unknown Device",
           platform: platform || "Unknown",
           deviceId: deviceId || "",
-          tokenHash,
           lastActive: new Date(),
-          isActive: true,
         },
-        $setOnInsert: { createdAt: new Date() },
       },
-      { upsert: true },
     );
     res.json({ success: true });
   } catch (error) {
@@ -332,13 +324,7 @@ export const getUserSessions = async (
 ) => {
   try {
     const userId = (req as any).user.id.toString();
-    const rawToken = (req.headers.authorization || "").split(" ")[1] || "";
-    const crypto = require("crypto");
-    const currentTokenHash = crypto
-      .createHash("sha256")
-      .update(rawToken)
-      .digest("hex")
-      .slice(0, 20);
+    const currentSid = (req as any).sessionId;
     const db = (mongoose as any).connection.db;
 
     const sessions = await db
@@ -355,7 +341,7 @@ export const getUserSessions = async (
         platform: s.platform,
         lastActive: s.lastActive,
         createdAt: s.createdAt,
-        isCurrent: s.tokenHash === currentTokenHash,
+        isCurrent: s._id === currentSid,
       })),
     });
   } catch (error) {
@@ -372,14 +358,9 @@ export const deleteUserSession = async (
   try {
     const userId = (req as any).user.id.toString();
     const { id } = req.params;
-    const db = (mongoose as any).connection.db;
-
-    await db
+    await (mongoose as any).connection.db
       .collection("user_sessions")
-      .updateOne(
-        { _id: new mongoose.Types.ObjectId(id), userId },
-        { $set: { isActive: false } },
-      );
+      .updateOne({ _id: id, userId }, { $set: { isActive: false } });
     res.json({ success: true });
   } catch (error) {
     next(error);

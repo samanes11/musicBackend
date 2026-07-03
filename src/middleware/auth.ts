@@ -14,6 +14,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     if (!user) return res.status(401).json({ success: false, message: "User not found" });
     if (!user.isActive) return res.status(401).json({ success: false, message: "Account inactive" });
     (req as any).user = user;
+    (req as any).sessionId = decoded.sid || null;
     next();
   } catch (error: any) {
     return res.status(401).json({ success: false, message: "Invalid token", error: error.message });
