@@ -10,6 +10,7 @@ import {
   registerSession, 
   getUserSessions,
   deleteUserSession,
+  refreshTelegramUsername,
 } from "../controllers/authController";
 import { sendMessage, getMessages } from "../controllers/contactController";
 import { updateProfileValidation } from "../middleware/validators";
@@ -94,6 +95,7 @@ router.post("/auth/logout", authenticate, logout);
 router.post("/auth/session/register", authenticate, registerSession);
 router.get("/auth/sessions", authenticate, getUserSessions);
 router.delete("/auth/sessions/:id", authenticate, deleteUserSession);
+router.get("/auth/telegram/refresh-username", authenticate, refreshTelegramUsername);
 
 // ── Admin: Default Channels ─────────────────────────────────────
 router.get("/admin/default-channels", adminAuth, listDefaultChannels);

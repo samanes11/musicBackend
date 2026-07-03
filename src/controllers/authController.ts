@@ -5,6 +5,7 @@ import { applyDefaultChannelsForNewUser } from "./defaultChannelsController";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import mongoose from "mongoose";
+import bot from "../services/telegramBot";
 
 // ── POST /api/auth/telegram ─────────────────────────────────────
 
@@ -380,6 +381,44 @@ export const deleteUserSession = async (
         { $set: { isActive: false } },
       );
     res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── GET /api/auth/telegram/refresh-username ─────────────────────
+export const refreshTelegramUsername = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const user = await User.findById((req as any).user.id);
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+
+    if (!user.telegramId) {
+      return res.status(400).json({
+        success: false,
+        message: "No Telegram account linked",
+      });
+    }
+
+    try {
+      const chat: any = await bot.getChat(user.telegramId);
+      user.telegramUsername = chat.username || null;
+      await user.save();
+    } catch (err) {
+      return res.status(502).json({
+        success: false,
+        message:
+          "Could not fetch your Telegram info. Send /start to the bot first.",
+      });
+    }
+
+    res.json({ success: true, data: { user: user.toPublicJSON() } });
   } catch (error) {
     next(error);
   }
