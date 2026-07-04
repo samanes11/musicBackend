@@ -87,8 +87,18 @@ export const pollTelegramAuth = async (
 
     await db.collection("telegram_auth_sessions").deleteOne({ sessionId });
 
+    // بعد
     const user = await User.findById(session.userId);
     if (!user) return res.json({ success: true, confirmed: false });
+
+    const deviceId: string | null = session.deviceId || null;
+
+    if (deviceId) {
+      await db.collection("user_sessions").deleteMany({
+        userId: user._id.toString(),
+        deviceId,
+      });
+    }
 
     const activeCount = await db
       .collection("user_sessions")
@@ -110,7 +120,7 @@ export const pollTelegramAuth = async (
       refreshTokenHash: hashToken(tokens.refreshToken),
       deviceName: "Unknown Device",
       platform: "Unknown",
-      deviceId: "",
+      deviceId: deviceId || "",
       isActive: true,
       createdAt: new Date(),
       lastActive: new Date(),
@@ -126,12 +136,14 @@ export const pollTelegramAuth = async (
   }
 };
 // ── POST /api/auth/telegram/session ─────────────────────────────
+// بعد
 export const createTelegramSession = async (
   req: Request,
   res: Response,
   next: NextFunction,
 ) => {
   try {
+    const { deviceId } = req.body;
     const sessionId = crypto.randomBytes(16).toString("hex");
     const botUsername = process.env.TELEGRAM_BOT_USERNAME!;
     const db = (mongoose as any).connection.db;
@@ -139,8 +151,9 @@ export const createTelegramSession = async (
     await db.collection("telegram_auth_sessions").insertOne({
       sessionId,
       status: "pending",
+      deviceId: deviceId || null,
       createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 دقیقه
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     });
 
     const telegramLink = `https://t.me/${botUsername}?start=auth_${sessionId}`;
