@@ -41,7 +41,9 @@ export const getSongs = async (
         .project({ channelUsername: 1 })
         .toArray();
 
-      query.channelUsername = { $in: userChannels.map((ch) => ch.channelUsername) };
+      query.channelUsername = {
+        $in: userChannels.map((ch) => ch.channelUsername),
+      };
     }
 
     let sort: Record<string, any> = { messageDate: -1 };
@@ -61,15 +63,18 @@ export const getSongs = async (
     const includeBotSongs = !channelUsername && !hasSearch && !sortBy;
 
     if (!includeBotSongs) {
-      const [result] = await db.collection("songs").aggregate([
-        { $match: query },
-        {
-          $facet: {
-            meta: [{ $count: "total" }],
-            data: [{ $sort: sort }, { $skip: skip }, { $limit: limitNum }],
+      const [result] = await db
+        .collection("songs")
+        .aggregate([
+          { $match: query },
+          {
+            $facet: {
+              meta: [{ $count: "total" }],
+              data: [{ $sort: sort }, { $skip: skip }, { $limit: limitNum }],
+            },
           },
-        },
-      ]).toArray();
+        ])
+        .toArray();
 
       const total = result.meta[0]?.total ?? 0;
       const songs = result.data ?? [];
@@ -85,42 +90,45 @@ export const getSongs = async (
       });
     }
 
-    const [result] = await db.collection("songs").aggregate([
-      { $match: query },
-      { $addFields: { _sortDate: "$messageDate" } },
-      {
-        $unionWith: {
-          coll: "bot_songs",
-          pipeline: [
-            { $match: { userId: userIdStr } },
-            {
-              $project: {
-                _id: 1,
-                channelDbId: { $toString: "$_id" },
-                channelUsername: 1,
-                channelName: { $literal: "Bot Inbox" },
-                title: 1,
-                artist: 1,
-                duration: 1,
-                fileId: 1,
-                fileSize: 1,
-                mimeType: 1,
-                thumbnail: 1,
-                messageId: 1,
-                _sortDate: "$receivedAt",
+    const [result] = await db
+      .collection("songs")
+      .aggregate([
+        { $match: query },
+        { $addFields: { _sortDate: "$messageDate" } },
+        {
+          $unionWith: {
+            coll: "bot_songs",
+            pipeline: [
+              { $match: { userId: userIdStr } },
+              {
+                $project: {
+                  _id: 1,
+                  channelDbId: { $toString: "$_id" },
+                  channelUsername: 1,
+                  channelName: { $literal: "Bot Inbox" },
+                  title: 1,
+                  artist: 1,
+                  duration: 1,
+                  fileId: 1,
+                  fileSize: 1,
+                  mimeType: 1,
+                  thumbnail: 1,
+                  messageId: 1,
+                  _sortDate: "$receivedAt",
+                },
               },
-            },
-          ],
+            ],
+          },
         },
-      },
-      { $sort: { _sortDate: -1 } },
-      {
-        $facet: {
-          meta: [{ $count: "total" }],
-          data: [{ $skip: skip }, { $limit: limitNum }],
+        { $sort: { _sortDate: -1 } },
+        {
+          $facet: {
+            meta: [{ $count: "total" }],
+            data: [{ $skip: skip }, { $limit: limitNum }],
+          },
         },
-      },
-    ]).toArray();
+      ])
+      .toArray();
 
     const total = result.meta[0]?.total ?? 0;
     const songs = result.data ?? [];
@@ -177,6 +185,72 @@ export const getSongById = async (
         .json({ success: false, message: "Song not found" });
 
     res.json({ success: true, data: song });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── GET /api/songs/by-ids?ids=id1,id2,id3 ──────────────────────
+export const getSongsByIds = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const idsParam = (req.query.ids as string) || "";
+    const ids = idsParam
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const objIds = ids
+      .map((id) => {
+        try {
+          return new mongoose.Types.ObjectId(id);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as mongoose.Types.ObjectId[];
+
+    const db = mongoose.connection.db;
+
+    const [songs, botSongs] = await Promise.all([
+      db
+        .collection("songs")
+        .find({ _id: { $in: objIds } })
+        .toArray(),
+      db
+        .collection("bot_songs")
+        .find({ _id: { $in: objIds }, userId })
+        .toArray(),
+    ]);
+
+    const songMap = new Map(songs.map((s: any) => [s._id.toString(), s]));
+    for (const bs of botSongs) {
+      songMap.set(bs._id.toString(), {
+        _id: bs._id,
+        channelDbId: bs._id.toString(),
+        channelUsername: bs.channelUsername,
+        channelName: "Bot Inbox",
+        title: bs.title,
+        artist: bs.artist,
+        duration: bs.duration,
+        fileId: bs.fileId,
+        fileSize: bs.fileSize,
+        thumbnail: bs.thumbnail,
+        messageId: bs.messageId,
+      });
+    }
+
+    const ordered = ids.map((id) => songMap.get(id)).filter(Boolean);
+
+    res.json({ success: true, data: ordered });
   } catch (error) {
     next(error);
   }

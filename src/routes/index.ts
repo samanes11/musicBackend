@@ -23,7 +23,7 @@ import {
   getSyncStatus,
   _syncInBackground,
 } from "../controllers/channelsController";
-import { getSongById, getSongs } from "../controllers/songsController";
+import {getSongById, getSongs, getSongsByIds  } from "../controllers/songsController";
 import {
   getFavorites,
   toggleFavorite,
@@ -177,6 +177,7 @@ router.post(
 
 // ── Songs ───────────────────────────────────────────────────────
 router.get("/songs", authenticate, getSongs);
+router.get("/songs/by-ids", authenticate, getSongsByIds);
 router.get("/songs/:id", authenticate, getSongById);
 
 // ── Favorites ───────────────────────────────────────────────────
