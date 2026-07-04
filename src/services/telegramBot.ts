@@ -3,6 +3,7 @@ import type { Message } from "node-telegram-bot-api";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import axios from "axios";
+import User from "../models/User";
 
 const BOT_AUTH_SECRET = process.env.BOT_AUTH_SECRET!;
 const API_BASE = process.env.PUBLIC_API_URL!;
@@ -202,7 +203,7 @@ bot.onText(/\/mystats/, async (msg) => {
       })
     : null;
 
-  bot.sendMessage(
+   bot.sendMessage(
     chatId,
     `📊 *Your Account Stats*\n\n` +
       `👤 Name: ${user?.name || "—"}\n` +
@@ -212,6 +213,39 @@ bot.onText(/\/mystats/, async (msg) => {
       `\nTo manage your subscription, open the Tel Player app.`,
     { parse_mode: "Markdown" },
   );
+});
+
+bot.onText(/^(\/updateusername|update username)$/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const telegramId = msg.from!.id.toString();
+  const telegramUsername = msg.from!.username || "";
+
+  try {
+    const user = await User.findOne({ telegramId });
+    if (!user) {
+      return bot.sendMessage(
+        chatId,
+        "❌ We couldn't find your account. Please log in to Tel Player first.",
+      );
+    }
+
+    if (!telegramUsername) {
+      return bot.sendMessage(
+        chatId,
+        "⚠️ You don't have a Telegram username set.\n\nPlease set one in Telegram → Settings → Username, then send this message again.",
+      );
+    }
+
+    user.telegramUsername = telegramUsername;
+    await user.save();
+
+    bot.sendMessage(
+      chatId,
+      `✅ Your username has been updated to @${telegramUsername}.\n\nYou can return to the app now.`,
+    );
+  } catch (err) {
+    bot.sendMessage(chatId, "❌ Something went wrong. Please try again.");
+  }
 });
 
 async function _handleAudioMessage(msg: TelegramBot.Message) {
