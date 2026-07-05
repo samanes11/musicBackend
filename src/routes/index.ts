@@ -80,6 +80,7 @@ import {
   getRecentlyPlayed,
   recordPlay,
 } from "../controllers/playHistoryController";
+import { requirePremium } from "../middleware/requirePremium";
 
 const router = Router();
 
@@ -127,12 +128,12 @@ router.get("/admin/messages", adminAuth, getMessages);
 router.get("/subscription/plans", getPlans);
 router.post("/subscription/order", authenticate, createSubscriptionOrder);
 router.get("/subscription/order/:orderId/status", authenticate, getOrderStatus);
-router.get("/subscription/callback", subscriptionCallback); // public — درگاه صداش میزنه
+router.get("/subscription/callback", subscriptionCallback);
 router.get("/subscription/status", authenticate, getSubscriptionStatus);
 
 // ── Channels ────────────────────────────────────────────────────
 router.get("/channels", authenticate, getUserChannels);
-router.post("/channels", authenticate, addChannel);
+router.post("/channels", authenticate, requirePremium, addChannel);
 router.delete("/channels/:username", authenticate, removeChannel);
 router.post("/channels/:username/sync", authenticate, syncChannel);
 router.get("/channels/:username/sync-status", authenticate, getSyncStatus);
@@ -186,11 +187,11 @@ router.post("/favorites/toggle", authenticate, toggleFavorite);
 
 // ── Playlists ───────────────────────────────────────────────────
 router.get("/playlists", authenticate, getPlaylists);
-router.post("/playlists", authenticate, createPlaylist);
+router.post("/playlists", authenticate, requirePremium, createPlaylist);
 router.put("/playlists/:id", authenticate, updatePlaylist);
 router.delete("/playlists/:id", authenticate, deletePlaylist);
 router.get("/playlists/:id/songs", authenticate, getPlaylistSongs);
-router.post("/playlists/:id/songs", authenticate, addSongToPlaylist);
+router.post("/playlists/:id/songs", authenticate, requirePremium, addSongToPlaylist);
 router.delete(
   "/playlists/:id/songs/:songId",
   authenticate,
@@ -202,7 +203,7 @@ router.post("/playlists/:id/reorder", authenticate, reorderPlaylist);
 router.get("/stream/check/:fileId", authenticate, checkDiskCache);
 router.get("/stream/token/:songId", authenticate, issueStreamToken);
 router.get("/stream/admin/stats", authenticate, getCacheStats);
-router.post("/stream", authenticate, streamSong);
+router.post("/stream", authenticate, requirePremium, streamSong);
 router.get("/stream/:token", streamByToken);
 
 // ── play-history ──────────────────────────────────────────────────────
