@@ -49,7 +49,6 @@ import {
   checkDiskCache,
   issueStreamToken,
   getCacheStats,
-  streamLive,
 } from "../controllers/streamController";
 import { checkServerCache } from "../controllers/downloadsController";
 import { getProxy, setProxy, testProxy } from "../controllers/proxyController";
@@ -216,7 +215,6 @@ router.get("/stream/check/:fileId", authenticate, checkDiskCache);
 router.get("/stream/token/:songId", authenticate, issueStreamToken);
 router.get("/stream/admin/stats", authenticate, getCacheStats);
 router.post("/stream", authenticate, requirePremium, streamSong);
-router.get("/stream/live", authenticate, streamLive);
 router.get("/stream/:token", streamByToken);
 
 // ── play-history ──────────────────────────────────────────────────────
