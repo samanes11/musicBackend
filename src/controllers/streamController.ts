@@ -276,7 +276,10 @@ export const streamSong = async (
       if (!clientGone) res.end();
       _upgradeArtworkFromId3(
         cachePath,
-        { channelUsername: channelUsername.replace("@", ""), messageId: parseInt(messageId) },
+        {
+          channelUsername: channelUsername.replace("@", ""),
+          messageId: parseInt(messageId),
+        },
         "songs",
         db,
       ).catch(() => {});
@@ -503,3 +506,100 @@ async function _upgradeArtworkFromId3(
   }
 }
 
+// ── GET /api/stream/live ────────────────────────────────────────
+// برای پخش پیش‌رونده: هم‌زمان استریم به کلاینت + نوشتن روی کش دیسک
+export const streamLive = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const { fileId, channelUsername, messageId } = req.query as {
+      fileId?: string;
+      channelUsername?: string;
+      messageId?: string;
+    };
+
+    if (!fileId || !channelUsername || !messageId) {
+      return res.status(400).json({
+        success: false,
+        msg: "fileId, channelUsername, messageId required",
+      });
+    }
+
+    // اگه قبلاً کش شده، مستقیم از دیسک سرو کن
+    if (isCached(fileId)) {
+      const cachePath = getCachePath(fileId);
+      const fileSize = fs.statSync(cachePath).size;
+      res.set({
+        "Content-Type": "audio/mpeg",
+        "Content-Length": fileSize.toString(),
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+      });
+      return fs.createReadStream(cachePath).pipe(res);
+    }
+
+    let handle;
+    try {
+      handle = await telegramService.prepareStreamDownload(
+        fileId,
+        channelUsername.replace("@", ""),
+        parseInt(messageId as string),
+        userId,
+      );
+    } catch (err: any) {
+      return res
+        .status(502)
+        .json({
+          success: false,
+          msg: err.message || "Telegram download failed",
+        });
+    }
+
+    res.set({
+      "Content-Type": "audio/mpeg",
+      ...(handle.totalSize > 0
+        ? { "Content-Length": handle.totalSize.toString() }
+        : {}),
+      "Accept-Ranges": "none",
+      "Cache-Control": "no-store",
+    });
+
+    const cachePath = getCachePath(fileId);
+    const tempPath = `${cachePath}.part`;
+    const fileStream = fs.createWriteStream(tempPath);
+    let clientGone = false;
+    req.on("close", () => {
+      clientGone = true;
+    });
+
+    try {
+      for await (const chunk of handle.chunks) {
+        fileStream.write(chunk);
+        if (!clientGone) {
+          const ok = res.write(chunk);
+          if (!ok) await new Promise((resolve) => res.once("drain", resolve));
+        }
+      }
+      await new Promise<void>((resolve, reject) => {
+        fileStream.end((err?: Error) => (err ? reject(err) : resolve()));
+      });
+      fs.renameSync(tempPath, cachePath);
+      if (!clientGone) res.end();
+    } catch (err) {
+      fileStream.destroy();
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {}
+      if (!res.headersSent) {
+        res.status(502).json({ success: false, msg: "Streaming failed" });
+      } else {
+        res.end();
+      }
+    }
+  } catch (error) {
+    next(error);
+  }
+};
