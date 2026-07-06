@@ -417,3 +417,54 @@ export const refreshTelegramUsername = async (
     next(error);
   }
 };
+
+// ── DELETE /api/auth/account ────────────────────────────────────
+export const deleteAccount = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const db = (mongoose as any).connection.db;
+
+    const userChannels = await db
+      .collection("user_channels")
+      .find({ userId })
+      .project({ channelUsername: 1 })
+      .toArray();
+    const channelUsernames = userChannels.map((c: any) => c.channelUsername);
+
+    await Promise.all([
+      db
+        .collection("users")
+        .deleteOne({ _id: new mongoose.Types.ObjectId(userId) }),
+      db.collection("user_channels").deleteMany({ userId }),
+      db.collection("user_favorites").deleteMany({ userId }),
+      db.collection("user_playlists").deleteMany({ userId }),
+      db.collection("user_sessions").deleteMany({ userId }),
+      db.collection("user_deleted_default_channels").deleteMany({ userId }),
+      db.collection("bot_songs").deleteMany({ userId }),
+      db.collection("bot_connections").deleteMany({ userId }),
+      db.collection("play_history").deleteMany({ userId }),
+      db.collection("subscription_orders").deleteMany({ userId }),
+    ]);
+
+    // songs/channels رو فقط اگه هیچ یوزر دیگه‌ای نداره حذف کن
+    for (const username of channelUsernames) {
+      const otherUsers = await db
+        .collection("user_channels")
+        .countDocuments({ channelUsername: username });
+      if (otherUsers === 0) {
+        await db.collection("songs").deleteMany({ channelUsername: username });
+        await db
+          .collection("channels")
+          .deleteOne({ channelUsername: username });
+      }
+    }
+
+    res.status(200).json({ success: true, message: "Account deleted" });
+  } catch (error) {
+    next(error);
+  }
+};

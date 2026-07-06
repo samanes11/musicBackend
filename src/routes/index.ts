@@ -11,6 +11,7 @@ import {
   getUserSessions,
   deleteUserSession,
   refreshTelegramUsername,
+  deleteAccount,
 } from "../controllers/authController";
 import { sendMessage, getMessages } from "../controllers/contactController";
 import { updateProfileValidation } from "../middleware/validators";
@@ -23,7 +24,11 @@ import {
   getSyncStatus,
   _syncInBackground,
 } from "../controllers/channelsController";
-import {getSongById, getSongs, getSongsByIds  } from "../controllers/songsController";
+import {
+  getSongById,
+  getSongs,
+  getSongsByIds,
+} from "../controllers/songsController";
 import {
   getFavorites,
   toggleFavorite,
@@ -101,6 +106,7 @@ router.post("/auth/logout", authenticate, logout);
 router.post("/auth/session/register", authenticate, registerSession);
 router.get("/auth/sessions", authenticate, getUserSessions);
 router.delete("/auth/sessions/:id", authenticate, deleteUserSession);
+router.delete("/auth/account", authenticate, deleteAccount);
 router.get(
   "/auth/telegram/refresh-username",
   authenticate,
@@ -191,7 +197,12 @@ router.post("/playlists", authenticate, requirePremium, createPlaylist);
 router.put("/playlists/:id", authenticate, updatePlaylist);
 router.delete("/playlists/:id", authenticate, deletePlaylist);
 router.get("/playlists/:id/songs", authenticate, getPlaylistSongs);
-router.post("/playlists/:id/songs", authenticate, requirePremium, addSongToPlaylist);
+router.post(
+  "/playlists/:id/songs",
+  authenticate,
+  requirePremium,
+  addSongToPlaylist,
+);
 router.delete(
   "/playlists/:id/songs/:songId",
   authenticate,

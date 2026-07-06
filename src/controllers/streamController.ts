@@ -5,9 +5,7 @@ import path from "path";
 import telegramService from "../services/telegram";
 import mongoose from "mongoose";
 import { devNull } from "os";
-
-// const DEFAULT_COVER_URL =
-//   "https://res.cloudinary.com/doxbcawbz/image/upload/f_auto,q_auto/default_artwork_erioxt";
+import { extractEmbeddedArtwork } from "../utils/artwork";
 
 // ── Disk cache ─────────────────────────────────────────────────
 const AUDIO_CACHE_DIR =
@@ -150,6 +148,12 @@ export const streamSong = async (
         });
         fs.renameSync(tempPath, cachePath);
         if (!clientGone) res.end();
+        _upgradeArtworkFromId3(
+          cachePath,
+          { _id: botSong._id },
+          "bot_songs",
+          db,
+        ).catch(() => {});
       } catch (err) {
         fileStream.destroy();
         try {
@@ -258,7 +262,6 @@ export const streamSong = async (
         if (!clientGone) {
           const ok = res.write(chunk);
           if (!ok) {
-            // backpressure: صبر کن تا کلاینت چانک قبلی رو بگیره
             await new Promise((resolve) => res.once("drain", resolve));
           }
         }
@@ -268,10 +271,15 @@ export const streamSong = async (
         fileStream.end((err?: Error) => (err ? reject(err) : resolve()));
       });
 
-      fs.renameSync(tempPath, cachePath); // فقط بعد از تکمیل، rename کن
-      console.log(`💾 [stream] Cached: ${fileId}`);
+      fs.renameSync(tempPath, cachePath);
 
       if (!clientGone) res.end();
+      _upgradeArtworkFromId3(
+        cachePath,
+        { channelUsername: channelUsername.replace("@", ""), messageId: parseInt(messageId) },
+        "songs",
+        db,
+      ).catch(() => {});
     } catch (err) {
       fileStream.destroy();
       try {
@@ -451,8 +459,7 @@ async function _downloadThumbnailBg(
       .collection("telegram_songs")
       .findOne({ _id: new mongoose.Types.ObjectId(songId) });
 
-    if (!song || (song.thumbnail && song.thumbnail !== devNull))
-      return;
+    if (!song || (song.thumbnail && song.thumbnail !== devNull)) return;
 
     const thumbnail = await telegramService.downloadSongThumbnail(
       song.channelUsername,
@@ -474,4 +481,24 @@ function _fmtBytes(b: number): string {
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
   if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
   return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+async function _upgradeArtworkFromId3(
+  cachePath: string,
+  matchQuery: Record<string, any>,
+  collectionName: "songs" | "bot_songs",
+  db: any,
+): Promise<void> {
+  try {
+    const artwork = await extractEmbeddedArtwork(cachePath);
+    if (!artwork) return;
+    await db
+      .collection(collectionName)
+      .updateOne(matchQuery, { $set: { thumbnail: artwork } });
+    console.log(
+      `🖼️  [artwork] Upgraded from ID3: ${JSON.stringify(matchQuery)}`,
+    );
+  } catch (err) {
+    console.error("_upgradeArtworkFromId3 failed:", err);
+  }
 }
