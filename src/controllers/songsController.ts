@@ -37,7 +37,7 @@ export const getSongs = async (
     } else {
       const userChannels = await db
         .collection("user_channels")
-        .find({ userId: userIdStr })
+        .find({ userId: userIdStr, isDefault: { $ne: true } })
         .project({ channelUsername: 1 })
         .toArray();
 
