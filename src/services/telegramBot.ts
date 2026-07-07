@@ -369,6 +369,30 @@ bot.on("polling_error", (err) => {
   console.error("❌ Bot polling error:", err.message);
 });
 
+// ── Edit-in-place helper ─────────────────────────────────────────
+async function sendOrEdit(
+  chatId: number,
+  messageId: number | undefined,
+  text: string,
+  options: TelegramBot.SendMessageOptions = {},
+) {
+  if (messageId) {
+    try {
+      await bot.editMessageText(text, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: options.parse_mode,
+        reply_markup: options.reply_markup as any,
+      });
+      return;
+    } catch (err: any) {
+      const desc = err?.response?.body?.description || err.message || "";
+      if (desc.includes("message is not modified")) return;
+      console.error("editMessageText failed, sending new message:", desc);
+    }
+  }
+  await bot.sendMessage(chatId, text, options);
+}
 // ── Inline Menu ─────────────────────────────────────────────────
 
 function mainMenuKeyboard() {
@@ -382,14 +406,12 @@ function mainMenuKeyboard() {
   };
 }
 
-async function sendMainMenu(chatId: number) {
-  await bot.sendMessage(
+async function sendMainMenu(chatId: number, messageId?: number) {
+  await sendOrEdit(
     chatId,
+    messageId,
     `🎧 *Tel Player*\n\nWhat would you like to do?`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: mainMenuKeyboard(),
-    },
+    { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() },
   );
 }
 
@@ -401,20 +423,23 @@ async function handleUpdateUsername(
   chatId: number,
   telegramId: string,
   telegramUsername: string,
+  messageId?: number,
 ) {
   try {
     const user = await User.findOne({ telegramId });
     if (!user) {
-      return bot.sendMessage(
+      return sendOrEdit(
         chatId,
+        messageId,
         "❌ *Account Not Found*\n\nPlease log in to Tel Player first, then try again.",
         { parse_mode: "Markdown", reply_markup: backToMenuKeyboard },
       );
     }
 
     if (!telegramUsername) {
-      return bot.sendMessage(
+      return sendOrEdit(
         chatId,
+        messageId,
         "⚠️ *No Telegram Username Set*\n\nGo to Telegram → Settings → Username, set one, then try again.",
         { parse_mode: "Markdown", reply_markup: backToMenuKeyboard },
       );
@@ -423,22 +448,33 @@ async function handleUpdateUsername(
     user.telegramUsername = telegramUsername;
     await user.save();
 
-    await bot.sendMessage(
+    await sendOrEdit(
       chatId,
+      messageId,
       `✅ *Username Updated*\n\nYour username is now set to @${escapeMarkdown(telegramUsername)}.\nYou can return to the app now.`,
       { parse_mode: "Markdown", reply_markup: backToMenuKeyboard },
     );
   } catch (err) {
-    await bot.sendMessage(chatId, "❌ Something went wrong. Please try again.");
+    await sendOrEdit(
+      chatId,
+      messageId,
+      "❌ Something went wrong. Please try again.",
+    );
   }
 }
 
-async function sendAccountInfo(chatId: number, telegramId: string, db: any) {
+async function sendAccountInfo(
+  chatId: number,
+  telegramId: string,
+  db: any,
+  messageId?: number,
+) {
   try {
     const user = await User.findOne({ telegramId });
     if (!user) {
-      return bot.sendMessage(
+      return sendOrEdit(
         chatId,
+        messageId,
         "❌ *Account Not Found*\n\nPlease log in to Tel Player first.",
         { parse_mode: "Markdown", reply_markup: backToMenuKeyboard },
       );
@@ -495,7 +531,7 @@ async function sendAccountInfo(chatId: number, telegramId: string, db: any) {
       `📃 *Playlists:* ${playlistCount.toLocaleString()}\n\n` +
       `💎 *Subscription:* ${isPremium ? `Active ✅ — until ${expiryStr}` : "Inactive ❌"}`;
 
-    await bot.sendMessage(chatId, text, {
+    await sendOrEdit(chatId, messageId, text, {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
@@ -509,18 +545,24 @@ async function sendAccountInfo(chatId: number, telegramId: string, db: any) {
     });
   } catch (err) {
     console.error("sendAccountInfo error:", err);
-    await bot.sendMessage(
+    await sendOrEdit(
       chatId,
+      messageId,
       "❌ Could not load your account info. Please try again.",
       { reply_markup: backToMenuKeyboard },
     );
   }
 }
 
-async function sendAllChannels(chatId: number, telegramId: string, db: any) {
+async function sendAllChannels(
+  chatId: number,
+  telegramId: string,
+  db: any,
+  messageId?: number,
+) {
   const user = await User.findOne({ telegramId });
   if (!user) {
-    return bot.sendMessage(chatId, "❌ Account not found.", {
+    return sendOrEdit(chatId, messageId, "❌ Account not found.", {
       reply_markup: backToMenuKeyboard,
     });
   }
@@ -533,11 +575,18 @@ async function sendAllChannels(chatId: number, telegramId: string, db: any) {
     .toArray();
 
   if (userChannels.length === 0) {
-    return bot.sendMessage(chatId, "📁 You haven't added any channels yet.", {
-      reply_markup: {
-        inline_keyboard: [[{ text: "⬅️ Back", callback_data: "menu_account" }]],
+    return sendOrEdit(
+      chatId,
+      messageId,
+      "📁 You haven't added any channels yet.",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "⬅️ Back", callback_data: "menu_account" }],
+          ],
+        },
       },
-    });
+    );
   }
 
   const usernames = userChannels.map((c: any) => c.channelUsername);
@@ -562,7 +611,7 @@ async function sendAllChannels(chatId: number, telegramId: string, db: any) {
     text += `\n\n_…and ${userChannels.length - MAX} more. Open the app to see all._`;
   }
 
-  await bot.sendMessage(chatId, text, {
+  await sendOrEdit(chatId, messageId, text, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [[{ text: "⬅️ Back", callback_data: "menu_account" }]],
@@ -570,10 +619,15 @@ async function sendAllChannels(chatId: number, telegramId: string, db: any) {
   });
 }
 
-async function sendAllPlaylists(chatId: number, telegramId: string, db: any) {
+async function sendAllPlaylists(
+  chatId: number,
+  telegramId: string,
+  db: any,
+  messageId?: number,
+) {
   const user = await User.findOne({ telegramId });
   if (!user) {
-    return bot.sendMessage(chatId, "❌ Account not found.", {
+    return sendOrEdit(chatId, messageId, "❌ Account not found.", {
       reply_markup: backToMenuKeyboard,
     });
   }
@@ -586,8 +640,9 @@ async function sendAllPlaylists(chatId: number, telegramId: string, db: any) {
     .toArray();
 
   if (playlists.length === 0) {
-    return bot.sendMessage(
+    return sendOrEdit(
       chatId,
+      messageId,
       "📃 You haven't created any playlists yet.",
       {
         reply_markup: {
@@ -610,7 +665,7 @@ async function sendAllPlaylists(chatId: number, telegramId: string, db: any) {
     text += `\n\n_…and ${playlists.length - MAX} more. Open the app to see all._`;
   }
 
-  await bot.sendMessage(chatId, text, {
+  await sendOrEdit(chatId, messageId, text, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [[{ text: "⬅️ Back", callback_data: "menu_account" }]],
@@ -618,7 +673,12 @@ async function sendAllPlaylists(chatId: number, telegramId: string, db: any) {
   });
 }
 
-async function sendMusicGuide(chatId: number, telegramId: string, db: any) {
+async function sendMusicGuide(
+  chatId: number,
+  telegramId: string,
+  db: any,
+  messageId?: number,
+) {
   const connection = await db
     .collection("bot_connections")
     .findOne({ telegramId, isActive: true });
@@ -628,16 +688,21 @@ async function sendMusicGuide(chatId: number, telegramId: string, db: any) {
     ? `📤 *Send Music*\n\n✅ This Telegram account is connected to Tel Player.\n\nJust send any audio file to this chat — it will be added to your *Bot Inbox* automatically. 🎶`
     : `📤 *Send Music*\n\n⚠️ This Telegram account isn't connected yet.\n\nOpen Tel Player → *Bot Inbox* → *Get Connection Code*, then send that 6-character code here.\nOnce connected, any audio file you send will be added to your library automatically.`;
 
-  await bot.sendMessage(chatId, text, {
+  await sendOrEdit(chatId, messageId, text, {
     parse_mode: "Markdown",
     reply_markup: backToMenuKeyboard,
   });
 }
 
-async function sendSessionsList(chatId: number, telegramId: string, db: any) {
+async function sendSessionsList(
+  chatId: number,
+  telegramId: string,
+  db: any,
+  messageId?: number,
+) {
   const user = await User.findOne({ telegramId });
   if (!user) {
-    return bot.sendMessage(chatId, "❌ Account not found.", {
+    return sendOrEdit(chatId, messageId, "❌ Account not found.", {
       reply_markup: backToMenuKeyboard,
     });
   }
@@ -650,7 +715,7 @@ async function sendSessionsList(chatId: number, telegramId: string, db: any) {
     .toArray();
 
   if (sessions.length === 0) {
-    return bot.sendMessage(chatId, "📱 No active sessions found.", {
+    return sendOrEdit(chatId, messageId, "📱 No active sessions found.", {
       reply_markup: backToMenuKeyboard,
     });
   }
@@ -675,7 +740,7 @@ async function sendSessionsList(chatId: number, telegramId: string, db: any) {
   ]);
   buttons.push([{ text: "⬅️ Back to Menu", callback_data: "back_menu" }]);
 
-  await bot.sendMessage(chatId, text, {
+  await sendOrEdit(chatId, messageId, text, {
     parse_mode: "Markdown",
     reply_markup: { inline_keyboard: buttons },
   });
@@ -686,10 +751,11 @@ async function removeSession(
   telegramId: string,
   sessionId: string,
   db: any,
+  messageId?: number,
 ) {
   const user = await User.findOne({ telegramId });
   if (!user) {
-    return bot.sendMessage(chatId, "❌ Account not found.", {
+    return sendOrEdit(chatId, messageId, "❌ Account not found.", {
       reply_markup: backToMenuKeyboard,
     });
   }
@@ -699,12 +765,12 @@ async function removeSession(
     .collection("user_sessions")
     .updateOne({ _id: sessionId, userId }, { $set: { isActive: false } });
 
-  await bot.sendMessage(chatId, "✅ Session signed out.");
-  await sendSessionsList(chatId, telegramId, db);
+  await sendSessionsList(chatId, telegramId, db, messageId);
 }
 
 bot.on("callback_query", async (query) => {
   const chatId = query.message?.chat.id;
+  const messageId = query.message?.message_id;
   if (!chatId) return;
 
   const telegramId = query.from.id.toString();
@@ -714,22 +780,31 @@ bot.on("callback_query", async (query) => {
 
   try {
     if (data === "menu_account") {
-      await sendAccountInfo(chatId, telegramId, db);
+      await sendAccountInfo(chatId, telegramId, db, messageId);
     } else if (data === "menu_update_username") {
-      await handleUpdateUsername(chatId, telegramId, telegramUsername);
+      await handleUpdateUsername(
+        chatId,
+        telegramId,
+        telegramUsername,
+        messageId,
+      );
     } else if (data === "menu_send_music") {
-      await sendMusicGuide(chatId, telegramId, db);
+      await sendMusicGuide(chatId, telegramId, db, messageId);
     } else if (data === "menu_sessions") {
-      await sendSessionsList(chatId, telegramId, db);
+      await sendSessionsList(chatId, telegramId, db, messageId);
     } else if (data === "all_channels") {
-      await sendAllChannels(chatId, telegramId, db);
+      await sendAllChannels(chatId, telegramId, db, messageId);
     } else if (data === "all_playlists") {
-      await sendAllPlaylists(chatId, telegramId, db);
+      await sendAllPlaylists(chatId, telegramId, db, messageId);
     } else if (data === "back_menu") {
-      await sendMainMenu(chatId);
+      await sendMainMenu(chatId, messageId);
     } else if (data.startsWith("session_del_")) {
       const sessionId = data.replace("session_del_", "");
-      await removeSession(chatId, telegramId, sessionId, db);
+      await removeSession(chatId, telegramId, sessionId, db, messageId);
+      await bot.answerCallbackQuery(query.id, {
+        text: "Session signed out ✅",
+      });
+      return;
     }
     await bot.answerCallbackQuery(query.id);
   } catch (err) {
