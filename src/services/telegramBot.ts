@@ -15,6 +15,17 @@ const pendingConnections = new Map<
   { userId: string; expiresAt: Date }
 >();
 
+// ── Update de-duplication ────────────────────────────────────────
+// جلوی پردازش دوباره‌ی همون پیام رو می‌گیره — برای وقتی که دو
+// نمونه از بات (مثلاً حین ریدیپلوی) به‌صورت گذرا همزمان polling می‌کنن.
+const _recentlyHandled = new Set<string>();
+function isDuplicateUpdate(key: string): boolean {
+  if (_recentlyHandled.has(key)) return true;
+  _recentlyHandled.add(key);
+  setTimeout(() => _recentlyHandled.delete(key), 60_000);
+  return false;
+}
+
 export function generateConnectionCode(userId: string): string {
   for (const [code, data] of pendingConnections.entries()) {
     if (data.userId === userId) pendingConnections.delete(code);
@@ -29,6 +40,7 @@ export function generateConnectionCode(userId: string): string {
 
 bot.onText(/^\/start(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
+  if (isDuplicateUpdate(`start_${chatId}_${msg.message_id}`)) return;
   const telegramId = msg.from.id.toString();
   const telegramUsername = msg.from.username || "";
   const name = [msg.from.first_name, msg.from.last_name]
