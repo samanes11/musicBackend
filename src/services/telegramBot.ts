@@ -522,14 +522,24 @@ async function sendAccountInfo(
       ? "@" + escapeMarkdown(user.telegramUsername)
       : "—";
 
+    const expiryDate = isPremium
+      ? new Date(user.subscriptionExpiresAt).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : null;
     const text =
       `📊 *Account Overview*\n\n` +
       `👤 *Name:* ${safeName}\n` +
       `🔗 *Username:* ${safeUsername}\n\n` +
-      `🎵 *Songs:* ${songCount.toLocaleString()}\n` +
+      // `🎵 *Songs:* ${songCount.toLocaleString()}\n` +
       `📁 *Channels:* ${channelCount.toLocaleString()}\n` +
       `📃 *Playlists:* ${playlistCount.toLocaleString()}\n\n` +
-      `💎 *Subscription:* ${isPremium ? `Active ✅ — until ${expiryStr}` : "Inactive ❌"}`;
+      // `💎 *Subscription:* ${isPremium ? `Active ✅ — until ${expiryStr}` : "Inactive ❌"}`;
+      `💎 Subscription: ${isPremium ? "Active ✅" : "None ❌"}\n` +
+      (isPremium ? `📅 Expires: ${expiryDate}\n` : "") +
+      `\nTo manage your subscription, open the Tel Player app.`;
 
     await sendOrEdit(chatId, messageId, text, {
       parse_mode: "Markdown",
