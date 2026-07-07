@@ -5,6 +5,11 @@ import crypto from "crypto";
 import axios from "axios";
 import User from "../models/User";
 
+function escapeMarkdown(text?: string | null): string {
+  if (!text) return "";
+  return text.replace(/([_*`\[])/g, "\\$1");
+}
+
 const BOT_AUTH_SECRET = process.env.BOT_AUTH_SECRET!;
 const API_BASE = process.env.PUBLIC_API_URL!;
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
@@ -16,8 +21,6 @@ const pendingConnections = new Map<
 >();
 
 // ── Update de-duplication ────────────────────────────────────────
-// جلوی پردازش دوباره‌ی همون پیام رو می‌گیره — برای وقتی که دو
-// نمونه از بات (مثلاً حین ریدیپلوی) به‌صورت گذرا همزمان polling می‌کنن.
 const _recentlyHandled = new Set<string>();
 function isDuplicateUpdate(key: string): boolean {
   if (_recentlyHandled.has(key)) return true;
@@ -422,7 +425,7 @@ async function handleUpdateUsername(
 
     await bot.sendMessage(
       chatId,
-      `✅ *Username Updated*\n\nYour username is now set to @${telegramUsername}.\nYou can return to the app now.`,
+      `✅ *Username Updated*\n\nYour username is now set to @${escapeMarkdown(telegramUsername)}.\nYou can return to the app now.`,
       { parse_mode: "Markdown", reply_markup: backToMenuKeyboard },
     );
   } catch (err) {
@@ -431,73 +434,87 @@ async function handleUpdateUsername(
 }
 
 async function sendAccountInfo(chatId: number, telegramId: string, db: any) {
-  const user = await User.findOne({ telegramId });
-  if (!user) {
-    return bot.sendMessage(
+  try {
+    const user = await User.findOne({ telegramId });
+    if (!user) {
+      return bot.sendMessage(
+        chatId,
+        "❌ *Account Not Found*\n\nPlease log in to Tel Player first.",
+        { parse_mode: "Markdown", reply_markup: backToMenuKeyboard },
+      );
+    }
+    const userId = user._id.toString();
+
+    const [channelCount, playlistCount, userChannels, botSongsCount] =
+      await Promise.all([
+        db.collection("user_channels").countDocuments({ userId }),
+        db.collection("user_playlists").countDocuments({ userId }),
+        db
+          .collection("user_channels")
+          .find({ userId })
+          .project({ channelUsername: 1 })
+          .toArray(),
+        db.collection("bot_songs").countDocuments({ userId }),
+      ]);
+
+    const channelUsernames = userChannels.map((c: any) => c.channelUsername);
+    const channelSongsAgg = channelUsernames.length
+      ? await db
+          .collection("channels")
+          .aggregate([
+            { $match: { channelUsername: { $in: channelUsernames } } },
+            { $group: { _id: null, total: { $sum: "$songsCount" } } },
+          ])
+          .toArray()
+      : [];
+
+    const songCount = (channelSongsAgg[0]?.total ?? 0) + botSongsCount;
+
+    const isPremium =
+      !!user.subscriptionExpiresAt &&
+      new Date(user.subscriptionExpiresAt) > new Date();
+    const expiryStr = isPremium
+      ? new Date(user.subscriptionExpiresAt).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : null;
+
+    const safeName = escapeMarkdown(user.name) || "—";
+    const safeUsername = user.telegramUsername
+      ? "@" + escapeMarkdown(user.telegramUsername)
+      : "—";
+
+    const text =
+      `📊 *Account Overview*\n\n` +
+      `👤 *Name:* ${safeName}\n` +
+      `🔗 *Username:* ${safeUsername}\n\n` +
+      `🎵 *Songs:* ${songCount.toLocaleString()}\n` +
+      `📁 *Channels:* ${channelCount.toLocaleString()}\n` +
+      `📃 *Playlists:* ${playlistCount.toLocaleString()}\n\n` +
+      `💎 *Subscription:* ${isPremium ? `Active ✅ — until ${expiryStr}` : "Inactive ❌"}`;
+
+    await bot.sendMessage(chatId, text, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "📁 All Channels", callback_data: "all_channels" },
+            { text: "📃 All Playlists", callback_data: "all_playlists" },
+          ],
+          [{ text: "⬅️ Back to Menu", callback_data: "back_menu" }],
+        ],
+      },
+    });
+  } catch (err) {
+    console.error("sendAccountInfo error:", err);
+    await bot.sendMessage(
       chatId,
-      "❌ *Account Not Found*\n\nPlease log in to Tel Player first.",
-      { parse_mode: "Markdown", reply_markup: backToMenuKeyboard },
+      "❌ Could not load your account info. Please try again.",
+      { reply_markup: backToMenuKeyboard },
     );
   }
-  const userId = user._id.toString();
-
-  const [channelCount, playlistCount, userChannels, botSongsCount] =
-    await Promise.all([
-      db.collection("user_channels").countDocuments({ userId }),
-      db.collection("user_playlists").countDocuments({ userId }),
-      db
-        .collection("user_channels")
-        .find({ userId })
-        .project({ channelUsername: 1 })
-        .toArray(),
-      db.collection("bot_songs").countDocuments({ userId }),
-    ]);
-
-  const channelUsernames = userChannels.map((c: any) => c.channelUsername);
-  const channelSongsAgg = channelUsernames.length
-    ? await db
-        .collection("channels")
-        .aggregate([
-          { $match: { channelUsername: { $in: channelUsernames } } },
-          { $group: { _id: null, total: { $sum: "$songsCount" } } },
-        ])
-        .toArray()
-    : [];
-
-  const songCount = (channelSongsAgg[0]?.total ?? 0) + botSongsCount;
-
-  const isPremium =
-    !!user.subscriptionExpiresAt &&
-    new Date(user.subscriptionExpiresAt) > new Date();
-  const expiryStr = isPremium
-    ? new Date(user.subscriptionExpiresAt).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      })
-    : null;
-
-  const text =
-    `📊 *Account Overview*\n\n` +
-    `👤 *Name:* ${user.name || "—"}\n` +
-    `🔗 *Username:* ${user.telegramUsername ? "@" + user.telegramUsername : "—"}\n\n` +
-    `🎵 *Songs:* ${songCount.toLocaleString()}\n` +
-    `📁 *Channels:* ${channelCount.toLocaleString()}\n` +
-    `📃 *Playlists:* ${playlistCount.toLocaleString()}\n\n` +
-    `💎 *Subscription:* ${isPremium ? `Active ✅ — until ${expiryStr}` : "Inactive ❌"}`;
-
-  await bot.sendMessage(chatId, text, {
-    parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "📁 All Channels", callback_data: "all_channels" },
-          { text: "📃 All Playlists", callback_data: "all_playlists" },
-        ],
-        [{ text: "⬅️ Back to Menu", callback_data: "back_menu" }],
-      ],
-    },
-  });
 }
 
 async function sendAllChannels(chatId: number, telegramId: string, db: any) {
