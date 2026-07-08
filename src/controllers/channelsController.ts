@@ -141,11 +141,15 @@ export const removeChannel = async (req, res, next) => {
       .findOne({ channelUsername: username });
 
     if (isDefault) {
-      await db.collection("user_deleted_default_channels").updateOne(
-        { userId, channelUsername: username },
-        { $set: { userId, channelUsername: username, deletedAt: new Date() } },
-        { upsert: true }
-      );
+      await db
+        .collection("user_deleted_default_channels")
+        .updateOne(
+          { userId, channelUsername: username },
+          {
+            $set: { userId, channelUsername: username, deletedAt: new Date() },
+          },
+          { upsert: true },
+        );
     }
 
     res.json({ success: true, msg: "Channel removed" });
@@ -178,6 +182,20 @@ export const syncChannel = async (req, res, next) => {
         success: true,
         syncing: true,
         msg: "Sync already in progress",
+      });
+    }
+
+    const SYNC_COOLDOWN_MS = 10 * 60 * 1000; 
+    if (
+      channel?.status === "active" &&
+      channel.lastSync &&
+      Date.now() - new Date(channel.lastSync).getTime() < SYNC_COOLDOWN_MS
+    ) {
+      return res.json({
+        success: true,
+        syncing: false,
+        msg: "Channel is already up to date",
+        songsCount: channel.songsCount,
       });
     }
 

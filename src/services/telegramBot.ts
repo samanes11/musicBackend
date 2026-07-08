@@ -536,7 +536,6 @@ async function sendAccountInfo(
       // `🎵 *Songs:* ${songCount.toLocaleString()}\n` +
       `📁 *Channels:* ${channelCount.toLocaleString()}\n` +
       `📃 *Playlists:* ${playlistCount.toLocaleString()}\n\n` +
-      // `💎 *Subscription:* ${isPremium ? `Active ✅ — until ${expiryStr}` : "Inactive ❌"}`;
       `💎 Subscription: ${isPremium ? "Active ✅" : "None ❌"}\n` +
       (isPremium ? `📅 Expires: ${expiryDate}\n` : "") +
       `\nTo manage your subscription, open the Tel Player app.`;
