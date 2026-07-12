@@ -98,9 +98,13 @@ export const updatePlaylist = async (
     const trimmedName = name.toString().trim();
     const objId = new mongoose.Types.ObjectId(playlistId);
 
-    const playlist = await db.collection("user_playlists").findOne({ _id: objId });
+    const playlist = await db
+      .collection("user_playlists")
+      .findOne({ _id: objId });
     if (!playlist)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
     if (playlist.ownerId !== userId)
       return res
         .status(403)
@@ -116,10 +120,12 @@ export const updatePlaylist = async (
         .status(400)
         .json({ success: false, msg: "Playlist name already exists" });
 
-    await db.collection("user_playlists").updateOne(
-      { _id: objId },
-      { $set: { name: trimmedName, updatedAt: new Date() } },
-    );
+    await db
+      .collection("user_playlists")
+      .updateOne(
+        { _id: objId },
+        { $set: { name: trimmedName, updatedAt: new Date() } },
+      );
 
     res.json({ success: true, msg: "Playlist updated" });
   } catch (error) {
@@ -145,7 +151,9 @@ export const deletePlaylist = async (
     });
 
     if (result.deletedCount === 0)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
 
     res.json({ success: true, msg: "Playlist deleted" });
   } catch (error) {
@@ -172,7 +180,9 @@ export const getPlaylistSongs = async (
       userIds: userId,
     });
     if (!playlist)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
 
     const songIds = playlist.songIds ?? [];
     const realCount = songIds.length;
@@ -192,7 +202,10 @@ export const getPlaylistSongs = async (
     // NOTE: bot_songs متعلق به کسیه که در بات‌اش فرستاده (owner) نه هر عضوی که
     // داره playlist رو می‌بینه — پس اینجا باید با ownerId فیلتر بشه، نه userId درخواست‌دهنده.
     const [songs, botSongs] = await Promise.all([
-      db.collection("songs").find({ _id: { $in: objIds } }).toArray(),
+      db
+        .collection("songs")
+        .find({ _id: { $in: objIds } })
+        .toArray(),
       db
         .collection("bot_songs")
         .find({ _id: { $in: objIds }, userId: playlist.ownerId })
@@ -217,7 +230,9 @@ export const getPlaylistSongs = async (
       });
     }
 
-    const ordered = pageIds.map((id: string) => songMap.get(id)).filter(Boolean);
+    const ordered = pageIds
+      .map((id: string) => songMap.get(id))
+      .filter(Boolean);
 
     res.json({
       success: true,
@@ -272,8 +287,12 @@ export const addSongToPlaylist = async (
         userIds: userId,
       });
       if (!exists)
-        return res.status(404).json({ success: false, msg: "Playlist not found" });
-      return res.status(400).json({ success: false, msg: "Song already in playlist" });
+        return res
+          .status(404)
+          .json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(400)
+        .json({ success: false, msg: "Song already in playlist" });
     }
 
     res.json({ success: true, msg: "Song added to playlist" });
@@ -302,7 +321,9 @@ export const removeSongFromPlaylist = async (
     );
 
     if (result.matchedCount === 0)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
 
     res.json({ success: true, msg: "Song removed from playlist" });
   } catch (error) {
@@ -322,7 +343,9 @@ export const reorderPlaylist = async (
     const { songIds } = req.body;
 
     if (!Array.isArray(songIds)) {
-      return res.status(400).json({ success: false, msg: "songIds array required" });
+      return res
+        .status(400)
+        .json({ success: false, msg: "songIds array required" });
     }
 
     const db = mongoose.connection.db;
@@ -334,7 +357,9 @@ export const reorderPlaylist = async (
       );
 
     if (result.matchedCount === 0) {
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
     }
 
     res.json({ success: true, msg: "Playlist reordered" });
@@ -360,7 +385,9 @@ export const getPlaylistUsers = async (
       userIds: userId,
     });
     if (!playlist)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
 
     const objIds = (playlist.userIds as string[])
       .map((id) => {
@@ -402,29 +429,31 @@ export const addUserToPlaylist = async (
   try {
     const userId = (req as any).user.id.toString();
     const playlistId = req.params.id;
-    const { telegramUsername, telegramId } = req.body;
+    const { telegramId } = req.body;
 
-    if (!telegramUsername && !telegramId) {
+    if (!telegramId) {
       return res.status(400).json({
         success: false,
-        msg: "telegramUsername or telegramId required",
+        msg: "telegramId required",
       });
     }
 
     const db = mongoose.connection.db;
     const objId = new mongoose.Types.ObjectId(playlistId);
 
-    const playlist = await db.collection("user_playlists").findOne({ _id: objId });
+    const playlist = await db
+      .collection("user_playlists")
+      .findOne({ _id: objId });
     if (!playlist)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
     if (playlist.ownerId !== userId)
       return res
         .status(403)
         .json({ success: false, msg: "Only the playlist owner can add users" });
 
-    const query: any = telegramUsername
-      ? { telegramUsername: telegramUsername.toString().replace("@", "") }
-      : { telegramId: telegramId.toString() };
+    const query: any = { telegramId: telegramId.toString() };
 
     const targetUser = await db.collection("users").findOne(query);
     if (!targetUser)
@@ -432,13 +461,17 @@ export const addUserToPlaylist = async (
 
     const targetId = targetUser._id.toString();
     if ((playlist.userIds as string[]).includes(targetId)) {
-      return res.status(400).json({ success: false, msg: "User already has access" });
+      return res
+        .status(400)
+        .json({ success: false, msg: "User already has access" });
     }
 
-    await db.collection("user_playlists").updateOne(
-      { _id: objId },
-      { $addToSet: { userIds: targetId }, $set: { updatedAt: new Date() } },
-    );
+    await db
+      .collection("user_playlists")
+      .updateOne(
+        { _id: objId },
+        { $addToSet: { userIds: targetId }, $set: { updatedAt: new Date() } },
+      );
 
     res.json({
       success: true,
@@ -469,19 +502,29 @@ export const removeUserFromPlaylist = async (
     const db = mongoose.connection.db;
     const objId = new mongoose.Types.ObjectId(playlistId);
 
-    const playlist = await db.collection("user_playlists").findOne({ _id: objId });
+    const playlist = await db
+      .collection("user_playlists")
+      .findOne({ _id: objId });
     if (!playlist)
-      return res.status(404).json({ success: false, msg: "Playlist not found" });
-    if (playlist.ownerId !== userId)
       return res
-        .status(403)
-        .json({ success: false, msg: "Only the playlist owner can remove users" });
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
+    if (playlist.ownerId !== userId)
+      return res.status(403).json({
+        success: false,
+        msg: "Only the playlist owner can remove users",
+      });
     if (targetUserId === playlist.ownerId)
-      return res.status(400).json({ success: false, msg: "Cannot remove the owner" });
+      return res
+        .status(400)
+        .json({ success: false, msg: "Cannot remove the owner" });
 
     await db.collection("user_playlists").updateOne(
       { _id: objId },
-      { $pull: { userIds: targetUserId } as any, $set: { updatedAt: new Date() } },
+      {
+        $pull: { userIds: targetUserId } as any,
+        $set: { updatedAt: new Date() },
+      },
     );
 
     res.json({ success: true, msg: "User removed" });
@@ -510,11 +553,7 @@ export const searchUsers = async (
       .find({
         _id: { $ne: new mongoose.Types.ObjectId(userId) },
         isActive: true,
-        $or: [
-          { telegramUsername: { $regex: cleanQuery, $options: "i" } },
-          { telegramId: { $regex: cleanQuery, $options: "i" } },
-          { name: { $regex: cleanQuery, $options: "i" } },
-        ],
+        telegramId: { $regex: cleanQuery, $options: "i" },
       })
       .project({ name: 1, telegramUsername: 1, telegramId: 1 })
       .limit(20)
