@@ -90,48 +90,54 @@ export const getSongs = async (
       });
     }
 
-    const [result] = await db
-      .collection("songs")
-      .aggregate([
-        { $match: query },
-        { $addFields: { _sortDate: "$messageDate" } },
-        {
-          $unionWith: {
-            coll: "bot_songs",
-            pipeline: [
-              { $match: { userId: userIdStr } },
-              {
-                $project: {
-                  _id: 1,
-                  channelDbId: { $toString: "$_id" },
-                  channelUsername: 1,
-                  channelName: { $literal: "Bot Inbox" },
-                  title: 1,
-                  artist: 1,
-                  duration: 1,
-                  fileId: 1,
-                  fileSize: 1,
-                  mimeType: 1,
-                  thumbnail: 1,
-                  messageId: 1,
-                  _sortDate: "$receivedAt",
-                },
-              },
-            ],
-          },
-        },
-        { $sort: { _sortDate: -1 } },
-        {
-          $facet: {
-            meta: [{ $count: "total" }],
-            data: [{ $skip: skip }, { $limit: limitNum }],
-          },
-        },
-      ])
-      .toArray();
+    const fetchLimit = skip + limitNum;
 
-    const total = result.meta[0]?.total ?? 0;
-    const songs = result.data ?? [];
+    const [songDocs, botDocs, songsTotal, botTotal] = await Promise.all([
+      db
+        .collection("songs")
+        .find(query)
+        .sort({ messageDate: -1 })
+        .limit(fetchLimit)
+        .toArray(),
+      db
+        .collection("bot_songs")
+        .find({ userId: userIdStr })
+        .sort({ receivedAt: -1 })
+        .limit(fetchLimit)
+        .toArray(),
+      db.collection("songs").countDocuments(query),
+      db.collection("bot_songs").countDocuments({ userId: userIdStr }),
+    ]);
+
+    const combined = [
+      ...songDocs.map((s) => ({ ...s, _sortDate: s.messageDate })),
+      ...botDocs.map((s) => ({
+        _id: s._id,
+        channelDbId: s._id.toString(),
+        channelUsername: s.channelUsername,
+        channelName: "Bot Inbox",
+        title: s.title,
+        artist: s.artist,
+        duration: s.duration,
+        fileId: s.fileId,
+        fileSize: s.fileSize,
+        mimeType: s.mimeType,
+        thumbnail: s.thumbnail,
+        messageId: s.messageId,
+        _sortDate: s.receivedAt,
+      })),
+    ];
+
+    combined.sort(
+      (a, b) =>
+        new Date(b._sortDate).getTime() - new Date(a._sortDate).getTime(),
+    );
+
+    const songs = combined
+      .slice(skip, skip + limitNum)
+      .map(({ _sortDate, ...rest }) => rest);
+
+    const total = songsTotal + botTotal;
     const totalPages = Math.ceil(total / limitNum);
 
     res.json({

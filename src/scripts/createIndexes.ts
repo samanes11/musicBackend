@@ -5,6 +5,9 @@
  */
 import mongoose from "mongoose";
 import "dotenv/config";
+import dotenv from "dotenv";
+
+dotenv.config({ path: ".env.local" });
 
 async function createIndexes() {
   const uri = process.env.MONGODB_URI;
@@ -77,6 +80,15 @@ async function createIndexes() {
       { channelUsername: 1, searchPrefixes: 1 },
       { name: "songs_channel_search_prefixes", background: true },
     );
+
+  await db
+    .collection("bot_songs")
+    .createIndex(
+      { userId: 1, receivedAt: -1 },
+      { name: "bot_songs_user_date", background: true },
+    );
+
+  // user_channels (per-user mapping)
 
   // user_channels (per-user mapping)
   await db
