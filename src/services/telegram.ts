@@ -73,25 +73,6 @@ class TelegramService {
         console.warn("Primary thumbnail download failed:", error.message);
       }
 
-      try {
-        const username = channelUsername.replace("@", "");
-        const entity = await this.client!.getEntity(username);
-        const messages = await this.client!.getMessages(entity, {
-          ids: messageId,
-        });
-        if (messages[0] && messages[0].media) {
-          const buffer = (await this.client!.downloadMedia(
-            messages[0].media,
-            {},
-          )) as Buffer;
-          if (buffer && buffer.length > 0) {
-            return `data:image/jpeg;base64,${buffer.toString("base64")}`;
-          }
-        }
-      } catch (error: any) {
-        console.warn("Fallback thumbnail download failed:", error.message);
-      }
-
       return null;
     } catch (error) {
       console.error("Failed to download thumbnail:", error);

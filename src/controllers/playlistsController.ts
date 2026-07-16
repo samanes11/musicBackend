@@ -202,10 +202,21 @@ export const getPlaylistSongs = async (
     const [songs, botSongs] = await Promise.all([
       db
         .collection("songs")
-        .find(
-          { _id: { $in: objIds } },
-          { projection: { searchWords: 0, searchPrefixes: 0 } },
-        )
+        .aggregate([
+          { $match: { _id: { $in: objIds } } },
+          {
+            $addFields: {
+              thumbnail: {
+                $cond: [
+                  { $gt: [{ $strLenBytes: { $ifNull: ["$thumbnail", ""] } }, 300000] },
+                  null,
+                  "$thumbnail",
+                ],
+              },
+            },
+          },
+          { $project: { searchWords: 0, searchPrefixes: 0 } },
+        ])
         .toArray(),
       db
         .collection("bot_songs")
