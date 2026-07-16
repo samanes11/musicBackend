@@ -20,6 +20,13 @@ const pendingConnections = new Map<
   { userId: string; expiresAt: Date }
 >();
 
+setInterval(() => {
+  const now = new Date();
+  for (const [code, data] of pendingConnections.entries()) {
+    if (now > data.expiresAt) pendingConnections.delete(code);
+  }
+}, 5 * 60 * 1000);
+
 // ── Update de-duplication ────────────────────────────────────────
 const _recentlyHandled = new Set<string>();
 function isDuplicateUpdate(key: string): boolean {

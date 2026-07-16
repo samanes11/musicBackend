@@ -80,7 +80,6 @@ export const createPlaylist = async (
 };
 
 // ── PUT /api/playlists/:id ─────────────────────────────────────
-// Owner-only: rename the playlist.
 export const updatePlaylist = async (
   req: Request,
   res: Response,
@@ -269,7 +268,6 @@ export const getPlaylistSongs = async (
 };
 
 // ── POST /api/playlists/:id/songs ──────────────────────────────
-// هر عضوی (owner یا collaborator) اجازه‌ی اضافه کردن آهنگ داره.
 export const addSongToPlaylist = async (
   req: Request,
   res: Response,
@@ -384,7 +382,6 @@ export const reorderPlaylist = async (
 };
 
 // ── GET /api/playlists/:id/users ────────────────────────────────
-// Lists everyone who currently has access to this playlist.
 export const getPlaylistUsers = async (
   req: Request,
   res: Response,
@@ -435,7 +432,6 @@ export const getPlaylistUsers = async (
 };
 
 // ── POST /api/playlists/:id/users ───────────────────────────────
-// Owner-only: grant another app user access to add/remove songs.
 export const addUserToPlaylist = async (
   req: Request,
   res: Response,
@@ -505,7 +501,6 @@ export const addUserToPlaylist = async (
 };
 
 // ── DELETE /api/playlists/:id/users/:targetUserId ───────────────
-// Owner-only: revoke another user's access. The owner cannot remove themself.
 export const removeUserFromPlaylist = async (
   req: Request,
   res: Response,
@@ -549,7 +544,6 @@ export const removeUserFromPlaylist = async (
 };
 
 // ── GET /api/users/search?q=... ──────────────────────────────────
-// Used by the "Add User" picker when sharing a playlist.
 export const searchUsers = async (
   req: Request,
   res: Response,
