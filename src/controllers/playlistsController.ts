@@ -199,16 +199,20 @@ export const getPlaylistSongs = async (
       })
       .filter(Boolean);
 
-    // NOTE: bot_songs متعلق به کسیه که در بات‌اش فرستاده (owner) نه هر عضوی که
-    // داره playlist رو می‌بینه — پس اینجا باید با ownerId فیلتر بشه، نه userId درخواست‌دهنده.
     const [songs, botSongs] = await Promise.all([
       db
         .collection("songs")
-        .find({ _id: { $in: objIds } })
+        .find(
+          { _id: { $in: objIds } },
+          { projection: { searchWords: 0, searchPrefixes: 0 } },
+        )
         .toArray(),
       db
         .collection("bot_songs")
-        .find({ _id: { $in: objIds }, userId: playlist.ownerId })
+        .find(
+          { _id: { $in: objIds }, userId: playlist.ownerId },
+          { projection: { searchWords: 0, searchPrefixes: 0 } },
+        )
         .toArray(),
     ]);
 
