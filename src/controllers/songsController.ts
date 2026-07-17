@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import { buildSearchQuery } from "../utils/search";
+import { signThumbnailUrl, verifyThumbnailToken } from "../utils/thumbnailToken";
+import telegramService from "../services/telegram";
 
 export const getSongs = async (
   req: Request,
@@ -77,7 +79,10 @@ export const getSongs = async (
         .toArray();
 
       const total = result.meta[0]?.total ?? 0;
-      const songs = result.data ?? [];
+      const songs = (result.data ?? []).map((s: any) => ({
+        ...s,
+        thumbnail: signThumbnailUrl(s._id.toString()),
+      }));
       const totalPages = Math.ceil(total / limitNum);
 
       return res.json({
@@ -135,7 +140,10 @@ export const getSongs = async (
 
     const songs = combined
       .slice(skip, skip + limitNum)
-      .map(({ _sortDate, ...rest }) => rest);
+      .map(({ _sortDate, ...rest }: any) => ({
+        ...rest,
+        thumbnail: signThumbnailUrl(rest._id.toString()),
+      }));
 
     const total = songsTotal + botTotal;
     const totalPages = Math.ceil(total / limitNum);
@@ -189,7 +197,10 @@ export const getSongById = async (
         .status(404)
         .json({ success: false, message: "Song not found" });
 
-    res.json({ success: true, data: song });
+    res.json({
+      success: true,
+      data: { ...song, thumbnail: signThumbnailUrl(song._id.toString()) },
+    });
   } catch (error) {
     next(error);
   }
@@ -253,9 +264,123 @@ export const getSongsByIds = async (
       });
     }
 
-    const ordered = ids.map((id) => songMap.get(id)).filter(Boolean);
-
+    const ordered = ids
+      .map((id) => songMap.get(id))
+      .filter(Boolean)
+      .map((s: any) => ({
+        ...s,
+        thumbnail: signThumbnailUrl(s._id.toString()),
+      }));
     res.json({ success: true, data: ordered });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── In-memory cache تامبنیل — تا هر request مجبور نشه از تلگرام دانلود کنه ──
+const THUMB_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const THUMB_CACHE_MAX = 2000;
+const thumbCache = new Map<string, { buffer: Buffer; expiresAt: number }>();
+
+function getCachedThumb(id: string): Buffer | null {
+  const entry = thumbCache.get(id);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    thumbCache.delete(id);
+    return null;
+  }
+  return entry.buffer;
+}
+
+function setCachedThumb(id: string, buffer: Buffer) {
+  if (thumbCache.size >= THUMB_CACHE_MAX) {
+    thumbCache.delete(thumbCache.keys().next().value);
+  }
+  thumbCache.set(id, { buffer, expiresAt: Date.now() + THUMB_CACHE_TTL_MS });
+}
+
+// ── GET /api/songs/:id/thumbnail?exp=...&sig=... ─────────────────
+// عمداً authenticate نداره — امضای HMAC خودش auth رو تأمین می‌کنه
+export const getSongThumbnail = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { id } = req.params;
+    const exp = parseInt((req.query.exp as string) || "0", 10);
+    const sig = (req.query.sig as string) || "";
+
+    if (!verifyThumbnailToken(id, exp, sig)) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Invalid or expired link" });
+    }
+
+    const cached = getCachedThumb(id);
+    if (cached) {
+      res.set({
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "public, max-age=86400, immutable",
+      });
+      return res.send(cached);
+    }
+
+    let objId: mongoose.Types.ObjectId;
+    try {
+      objId = new mongoose.Types.ObjectId(id);
+    } catch {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid song id" });
+    }
+
+    const db = mongoose.connection.db;
+    let doc = await db
+      .collection("songs")
+      .findOne(objId ? { _id: objId } : {}, {
+        projection: { channelUsername: 1, messageId: 1 },
+      });
+
+    let botUserId: string | undefined;
+    if (!doc) {
+      doc = await db
+        .collection("bot_songs")
+        .findOne(
+          { _id: objId },
+          { projection: { channelUsername: 1, messageId: 1, userId: 1 } },
+        );
+      if (!doc)
+        return res
+          .status(404)
+          .json({ success: false, message: "Song not found" });
+      botUserId = (doc as any).userId;
+    }
+
+    const dataUrl = await telegramService.downloadSongThumbnail(
+      doc.channelUsername,
+      doc.messageId,
+      botUserId,
+    );
+    if (!dataUrl) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No thumbnail available" });
+    }
+
+    const buffer = Buffer.from(dataUrl.split(",")[1] ?? "", "base64");
+    if (buffer.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No thumbnail available" });
+    }
+
+    setCachedThumb(id, buffer);
+    res.set({
+      "Content-Type": "image/jpeg",
+      "Cache-Control": "public, max-age=86400, immutable",
+    });
+    res.send(buffer);
   } catch (error) {
     next(error);
   }

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
+import { signThumbnailUrl } from "../utils/thumbnailToken";
 
 // ── GET /api/playlists ─────────────────────────────────────────
 export const getPlaylists = async (
@@ -207,7 +208,12 @@ export const getPlaylistSongs = async (
             $addFields: {
               thumbnail: {
                 $cond: [
-                  { $gt: [{ $strLenBytes: { $ifNull: ["$thumbnail", ""] } }, 300000] },
+                  {
+                    $gt: [
+                      { $strLenBytes: { $ifNull: ["$thumbnail", ""] } },
+                      300000,
+                    ],
+                  },
                   null,
                   "$thumbnail",
                 ],
@@ -246,7 +252,11 @@ export const getPlaylistSongs = async (
 
     const ordered = pageIds
       .map((id: string) => songMap.get(id))
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((s: any) => ({
+        ...s,
+        thumbnail: signThumbnailUrl(s._id.toString()),
+      }));
 
     res.json({
       success: true,

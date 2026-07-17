@@ -28,6 +28,7 @@ import {
   getSongById,
   getSongs,
   getSongsByIds,
+  getSongThumbnail,
 } from "../controllers/songsController";
 import {
   getFavorites,
@@ -181,6 +182,7 @@ router.post(
 // ── Songs ───────────────────────────────────────────────────────
 router.get("/songs", authenticate, getSongs);
 router.get("/songs/by-ids", authenticate, getSongsByIds);
+router.get("/songs/:id/thumbnail", getSongThumbnail);
 router.get("/songs/:id", authenticate, getSongById);
 
 // ── Favorites ───────────────────────────────────────────────────
