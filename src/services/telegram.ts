@@ -346,12 +346,19 @@ class TelegramService {
     }
   }
 
-   async disconnect(): Promise<void> {
+  async disconnect(): Promise<void> {
     if (this.client) {
       try {
         await this.client.disconnect();
       } catch {}
       this.client = null;
+    }
+  }
+  isConnected(): boolean {
+    try {
+      return !!this.client && (this.client as any).connected === true;
+    } catch {
+      return false;
     }
   }
 }

@@ -134,7 +134,6 @@ export const updatePlaylist = async (
 };
 
 // ── DELETE /api/playlists/:id ──────────────────────────────────
-// Owner-only: delete the playlist entirely.
 export const deletePlaylist = async (
   req: Request,
   res: Response,
@@ -145,17 +144,43 @@ export const deletePlaylist = async (
     const playlistId = req.params.id;
     const db = mongoose.connection.db;
 
-    const result = await db.collection("user_playlists").deleteOne({
-      _id: new mongoose.Types.ObjectId(playlistId),
-      ownerId: userId,
-    });
+    let objId: mongoose.Types.ObjectId;
+    try {
+      objId = new mongoose.Types.ObjectId(playlistId);
+    } catch {
+      return res
+        .status(400)
+        .json({ success: false, msg: "Invalid playlist id" });
+    }
 
-    if (result.deletedCount === 0)
+    const playlist = await db
+      .collection("user_playlists")
+      .findOne({ _id: objId });
+    if (!playlist)
       return res
         .status(404)
         .json({ success: false, msg: "Playlist not found" });
 
-    res.json({ success: true, msg: "Playlist deleted" });
+    if (playlist.ownerId === userId) {
+      await db.collection("user_playlists").deleteOne({ _id: objId });
+      return res.json({ success: true, msg: "Playlist deleted" });
+    }
+
+    if (!(playlist.userIds as string[]).includes(userId)) {
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
+    }
+
+    await db.collection("user_playlists").updateOne(
+      { _id: objId },
+      {
+        $pull: { userIds: userId } as any,
+        $set: { updatedAt: new Date() },
+      },
+    );
+
+    res.json({ success: true, msg: "Left playlist" });
   } catch (error) {
     next(error);
   }

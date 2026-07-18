@@ -3,10 +3,12 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import mongoose from "mongoose";
 import connectDB from "./config/database";
 import routes from "./routes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
-import "./services/telegramBot";
+import telegramBot from "./services/telegramBot";
+import telegramService from "./services/telegram";
 
 const app = express();
 
@@ -25,7 +27,7 @@ app.use(
     message: { success: false, message: "Too many requests, try again later." },
     standardHeaders: true,
     legacyHeaders: false,
-  })
+  }),
 );
 
 // CORS
@@ -35,9 +37,73 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || "*", credentials: true }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Health Check
+// ── Health Check ────────────────────────────────────────────────
+const MONGO_STATES: Record<number, string> = {
+  0: "disconnected",
+  1: "connected",
+  2: "connecting",
+  3: "disconnecting",
+};
+
+function formatUptime(totalSeconds: number): string {
+  const s = Math.floor(totalSeconds);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return [d ? `${d}d` : null, h ? `${h}h` : null, m ? `${m}m` : null, `${sec}s`]
+    .filter(Boolean)
+    .join(" ");
+}
+
 app.get("/health", (req, res) => {
-  res.json({ success: true, message: "Server is running", timestamp: new Date().toISOString() });
+  const mem = process.memoryUsage();
+  const mongoState = mongoose.connection.readyState;
+  const mongoConnected = mongoState === 1;
+
+  let telegramClientConnected = false;
+  try {
+    telegramClientConnected = telegramService.isConnected();
+  } catch {}
+
+  let botPolling = false;
+  try {
+    botPolling = telegramBot.isPolling();
+  } catch {}
+
+  const overallOk = mongoConnected;
+
+  res.status(overallOk ? 200 : 503).json({
+    success: overallOk,
+    message: overallOk ? "Server is running" : "Server is degraded",
+    timestamp: new Date().toISOString(),
+    uptime: {
+      seconds: Math.floor(process.uptime()),
+      human: formatUptime(process.uptime()),
+    },
+    services: {
+      database: {
+        connected: mongoConnected,
+        status: MONGO_STATES[mongoState] ?? "unknown",
+        name: mongoose.connection.name || null,
+        host: mongoose.connection.host || null,
+      },
+      telegram: {
+        userClientConnected: telegramClientConnected,
+        botPolling,
+      },
+    },
+    system: {
+      nodeVersion: process.version,
+      env: process.env.NODE_ENV || "development",
+      pid: process.pid,
+      memoryMb: {
+        rss: +(mem.rss / 1024 / 1024).toFixed(1),
+        heapUsed: +(mem.heapUsed / 1024 / 1024).toFixed(1),
+        heapTotal: +(mem.heapTotal / 1024 / 1024).toFixed(1),
+      },
+    },
+  });
 });
 
 // API Routes
@@ -54,13 +120,6 @@ app.listen(PORT, () => {
   console.log(`🌍 Mode: ${process.env.NODE_ENV || "development"}`);
   console.log(`❤️  Health: http://localhost:${PORT}/health`);
   console.log(`📡 API:    http://localhost:${PORT}/api`);
-  console.log(`\n📋 Endpoints:`);
-  console.log(`  POST /api/auth/register`);
-  console.log(`  POST /api/auth/login`);
-  console.log(`  GET  /api/channels`);
-  console.log(`  GET  /api/songs`);
-  console.log(`  POST /api/stream`);
-  console.log(`  GET  /api/stream/:token\n`);
 });
 
 process.on("unhandledRejection", (err: any) => {
