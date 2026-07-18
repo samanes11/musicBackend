@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyToken } from "../utils/jwt";
 import User from "../models/User";
+import { getGlobalPromo } from "../utils/globalPromoCache";
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -15,6 +16,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     if (!user.isActive) return res.status(401).json({ success: false, message: "Account inactive" });
     (req as any).user = user;
     (req as any).sessionId = decoded.sid || null;
+    (req as any).globalPromo = await getGlobalPromo();
     next();
   } catch (error: any) {
     return res.status(401).json({ success: false, message: "Invalid token", error: error.message });

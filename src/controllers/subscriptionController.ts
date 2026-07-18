@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
+import { getGlobalPromo } from "../utils/globalPromoCache";
+import { computeEffectivePremium } from "../utils/premium";
 
 // ── Payment gateway config ─────────────────────────────────────────
 const PAYMENT_GATEWAY_URL = process.env.PAYMENT_GATEWAY_URL;
@@ -239,35 +241,31 @@ export const getOrderStatus = async (
 export const getSubscriptionStatus = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const userId = (req as any).user.id.toString();
     const db = mongoose.connection.db;
 
-    const [user, promo] = await Promise.all([
-      db
-        .collection("users")
-        .findOne(
-          { _id: new mongoose.Types.ObjectId(userId) },
-          { projection: { subscriptionPlan: 1, subscriptionExpiresAt: 1 } },
-        ),
-      db.collection("app_settings").findOne({ _id: "global_promotion" as any }),
-    ]);
+    const user = await db
+      .collection("users")
+      .findOne(
+        { _id: new mongoose.Types.ObjectId(userId) },
+        { projection: { subscriptionPlan: 1, subscriptionExpiresAt: 1 } }
+      );
 
-    const expiresAt = user?.subscriptionExpiresAt ?? null;
-    const isPremium = !!expiresAt && new Date(expiresAt) > new Date();
-    const promoActive =
-      !!promo?.active &&
-      !!promo.endDate &&
-      new Date(promo.endDate) > new Date();
+    const promo = (req as any).globalPromo || (await getGlobalPromo());
+    const { isPremium, effectiveExpiresAt, promoActive } = computeEffectivePremium(
+      user?.subscriptionExpiresAt,
+      promo,
+    );
 
     res.json({
       success: true,
       data: {
         isPremium,
         subscriptionPlan: user?.subscriptionPlan ?? null,
-        subscriptionExpiresAt: expiresAt,
+        subscriptionExpiresAt: effectiveExpiresAt,
         globalPromoEndDate: promoActive ? promo.endDate : null,
       },
     });
