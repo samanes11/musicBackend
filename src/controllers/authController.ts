@@ -11,33 +11,6 @@ const MAX_DEVICES = 3;
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
-
-async function applyGlobalPromoIfActive(user: any) {
-  try {
-    const db = mongoose.connection.db;
-    const promo = await db
-      .collection("app_settings")
-      .findOne({ _id: "global_promotion" as any });
-
-    if (
-      promo?.active &&
-      promo.endDate &&
-      new Date(promo.endDate) > new Date()
-    ) {
-      const endDate = new Date(promo.endDate);
-      if (
-        !user.subscriptionExpiresAt ||
-        new Date(user.subscriptionExpiresAt) < endDate
-      ) {
-        user.subscriptionExpiresAt = endDate;
-        user.subscriptionPlan = "promo";
-      }
-    }
-  } catch (err) {
-    console.error("applyGlobalPromoIfActive failed:", err);
-  }
-}
-
 // ── POST /api/auth/telegram ─────────────────────────────────────
 
 export const telegramAuth = async (
@@ -72,7 +45,6 @@ export const telegramAuth = async (
         role: "user",
       });
       isNew = true;
-      await applyGlobalPromoIfActive(user);
     } else {
       user.telegramUsername = telegramUsername || user.telegramUsername;
       if (!user.isActive) {

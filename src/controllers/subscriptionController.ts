@@ -183,7 +183,6 @@ async function _extendUserSubscription(
       { $set: { subscriptionPlan: planId, subscriptionExpiresAt: newExpiry } },
     );
 }
-
 function _resultPage(success: boolean, message: string): string {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   <title>Payment Result</title>
@@ -241,7 +240,7 @@ export const getOrderStatus = async (
 export const getSubscriptionStatus = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = (req as any).user.id.toString();
@@ -251,14 +250,12 @@ export const getSubscriptionStatus = async (
       .collection("users")
       .findOne(
         { _id: new mongoose.Types.ObjectId(userId) },
-        { projection: { subscriptionPlan: 1, subscriptionExpiresAt: 1 } }
+        { projection: { subscriptionPlan: 1, subscriptionExpiresAt: 1 } },
       );
 
     const promo = (req as any).globalPromo || (await getGlobalPromo());
-    const { isPremium, effectiveExpiresAt, promoActive } = computeEffectivePremium(
-      user?.subscriptionExpiresAt,
-      promo,
-    );
+    const { isPremium, effectiveExpiresAt, promoActive } =
+      computeEffectivePremium(user?.subscriptionExpiresAt, promo);
 
     res.json({
       success: true,
