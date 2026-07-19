@@ -161,6 +161,29 @@ async function _extendUserSubscription(
   days: number,
   db: any,
 ) {
+  const now = new Date();
+  const promo = await getGlobalPromo();
+  const promoActive = promo.active && !!promo.endDate && promo.endDate > now;
+
+  if (promoActive) {
+    // در حین پروموشن فعال، روزهای خریداری‌شده نباید همین الان روی
+    // subscriptionExpiresAt اثر بذاره — فقط به تعداد روزهای رزروشده اضافه
+    // می‌شه تا موقع پایان/غیرفعال‌شدن پروموشن، یک‌جا از همون لحظه فعال بشه.
+    await db
+      .collection("users")
+      .updateOne({ _id: new mongoose.Types.ObjectId(userId) }, [
+        {
+          $set: {
+            subscriptionPlan: planId,
+            reservedDaysAfterPromo: {
+              $add: [{ $ifNull: ["$reservedDaysAfterPromo", 0] }, days],
+            },
+          },
+        },
+      ]);
+    return;
+  }
+
   const user = await db
     .collection("users")
     .findOne(
@@ -168,7 +191,6 @@ async function _extendUserSubscription(
       { projection: { subscriptionExpiresAt: 1 } },
     );
 
-  const now = new Date();
   const base =
     user?.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > now
       ? new Date(user.subscriptionExpiresAt)
@@ -243,19 +265,15 @@ export const getSubscriptionStatus = async (
   next: NextFunction,
 ) => {
   try {
-    const userId = (req as any).user.id.toString();
-    const db = mongoose.connection.db;
-
-    const user = await db
-      .collection("users")
-      .findOne(
-        { _id: new mongoose.Types.ObjectId(userId) },
-        { projection: { subscriptionPlan: 1, subscriptionExpiresAt: 1 } },
-      );
-
+    const user = (req as any).user;
     const promo = (req as any).globalPromo || (await getGlobalPromo());
+
     const { isPremium, effectiveExpiresAt, promoActive } =
-      computeEffectivePremium(user?.subscriptionExpiresAt, promo);
+      computeEffectivePremium(
+        user?.subscriptionExpiresAt,
+        promo,
+        user?.reservedDaysAfterPromo,
+      );
 
     res.json({
       success: true,

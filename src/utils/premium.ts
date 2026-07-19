@@ -9,27 +9,24 @@ export interface EffectivePremium {
 export function computeEffectivePremium(
   realExpiresAt: Date | string | null | undefined,
   promo: GlobalPromo,
+  reservedDaysAfterPromo?: number | null,
 ): EffectivePremium {
   const now = new Date();
   const real = realExpiresAt ? new Date(realExpiresAt) : null;
-  const realActive = !!real && real > now;
   const promoActive = promo.active && !!promo.endDate && promo.endDate > now;
 
-  if (!promoActive) {
-    return { isPremium: realActive, effectiveExpiresAt: real, promoActive: false };
+  if (promoActive) {
+    const reserved =
+      reservedDaysAfterPromo && reservedDaysAfterPromo > 0
+        ? reservedDaysAfterPromo
+        : 0;
+    const effectiveExpiresAt =
+      reserved > 0
+        ? new Date(promo.endDate!.getTime() + reserved * 24 * 60 * 60 * 1000)
+        : promo.endDate;
+    return { isPremium: true, effectiveExpiresAt, promoActive: true };
   }
 
-  const promoEnd = promo.endDate as Date;
-
-  if (!realActive) {
-    return { isPremium: true, effectiveExpiresAt: promoEnd, promoActive: true };
-  }
-
-  if (real!.getTime() < promoEnd.getTime()) {
-    const remainingMs = real!.getTime() - now.getTime();
-    const effective = new Date(promoEnd.getTime() + remainingMs);
-    return { isPremium: true, effectiveExpiresAt: effective, promoActive: true };
-  }
-
-  return { isPremium: true, effectiveExpiresAt: real, promoActive: true };
+  const realActive = !!real && real > now;
+  return { isPremium: realActive, effectiveExpiresAt: real, promoActive: false };
 }
