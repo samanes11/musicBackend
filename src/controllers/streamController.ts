@@ -3,7 +3,6 @@ import telegramService from "../services/telegram";
 import mongoose from "mongoose";
 
 // ── POST /api/stream ───────────────────────────────────────────
-// همیشه مستقیم از تلگرام استریم می‌کنه، هیچ‌جا روی دیسک سرور نمی‌نویسه.
 export const streamSong = async (
   req: Request,
   res: Response,
@@ -25,10 +24,12 @@ export const streamSong = async (
           .json({ success: false, msg: "Bot song not found" });
       }
 
-      let handle;
+     let handle;
       try {
-        handle = await telegramService.prepareStreamDownloadByFileId(
+        handle = await telegramService.prepareStreamDownload(
           botSong.fileId,
+          botSong.channelUsername,
+          botSong.messageId,
           userId,
         );
       } catch (err: any) {

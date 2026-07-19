@@ -2,7 +2,6 @@ import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { Api } from "telegram/tl";
 import mongoose from "mongoose";
-import bigInt from "big-integer";
 
 const API_ID = parseInt(process.env.TELEGRAM_API_ID as string, 10);
 const API_HASH = process.env.TELEGRAM_API_HASH as string;
@@ -181,47 +180,6 @@ class TelegramService {
       console.error("Telegram Error:", error);
       return { success: false, error: error.message || "Unknown error" };
     }
-  }
-
-  // دانلود مستقیم با fileId (برای bot songs)
-  async prepareStreamDownloadByFileId(
-    fileId: string,
-    userId?: any,
-  ): Promise<StreamDownloadHandle> {
-    await this.initialize(userId);
-
-    // از InputDocument یا InputFile با fileId استفاده کن
-    const result = await this.client!.invoke(
-      new Api.messages.GetMessages({
-        id: [new Api.InputMessageID({ id: 0 })],
-      }),
-    ).catch(() => null);
-
-    // روش مستقیم‌تر: از getMessages با fileId
-    const inputFile = new Api.InputDocumentFileLocation({
-      id: bigInt(fileId),
-      accessHash: bigInt(0),
-      fileReference: Buffer.alloc(0),
-      thumbSize: "",
-    });
-
-    const totalSize = 0;
-    const client = this.client!;
-
-    async function* chunkGenerator() {
-      try {
-        for await (const chunk of client.iterDownload({
-          file: inputFile as any,
-          requestSize: 512 * 1024,
-        })) {
-          yield chunk as Buffer;
-        }
-      } catch {
-        // fallback: از طریق messages.getDocumentByHash
-      }
-    }
-
-    return { totalSize, chunks: chunkGenerator() };
   }
 
   async downloadFile(

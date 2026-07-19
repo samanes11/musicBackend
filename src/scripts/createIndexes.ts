@@ -122,33 +122,74 @@ async function createIndexes() {
       { unique: true, name: "favorites_user_song_unique", background: true },
     );
 
-  /* ─────────────────────────────────────────────
+/* ─────────────────────────────────────────────
      user_playlists
   ───────────────────────────────────────────── */
   await db
     .collection("user_playlists")
+    .dropIndex("playlists_user_date")
+    .catch(() => {}); 
+
+  await db
+    .collection("user_playlists")
     .createIndex(
-      { userId: 1, updatedAt: -1 },
-      { name: "playlists_user_date", background: true },
+      { userIds: 1, updatedAt: -1 },
+      { name: "playlists_userids_date", background: true },
     );
 
   await db
     .collection("play_history")
     .createIndex(
-      { userId: 1, songId: 1 },
-      { unique: true, name: "play_history_user_song_unique", background: true },
-    );
-  await db
-    .collection("play_history")
-    .createIndex(
-      { userId: 1, playCount: -1 },
-      { name: "play_history_user_count", background: true },
-    );
-  await db
-    .collection("play_history")
-    .createIndex(
       { userId: 1, lastPlayedAt: -1 },
       { name: "play_history_user_recent", background: true },
+    );
+
+  /* ─────────────────────────────────────────────
+     user_sessions
+  ───────────────────────────────────────────── */
+  await db
+    .collection("user_sessions")
+    .createIndex(
+      { userId: 1, isActive: 1, lastActive: -1 },
+      { name: "sessions_user_active_lastactive", background: true },
+    );
+
+  await db
+    .collection("user_sessions")
+    .createIndex(
+      { isActive: 1 },
+      { name: "sessions_active", background: true },
+    );
+
+  /* ─────────────────────────────────────────────
+     subscription_orders
+  ───────────────────────────────────────────── */
+  await db
+    .collection("subscription_orders")
+    .createIndex(
+      { orderId: 1 },
+      { unique: true, name: "orders_orderid_unique", background: true },
+    );
+
+  await db
+    .collection("subscription_orders")
+    .createIndex(
+      { userId: 1, createdAt: -1 },
+      { name: "orders_user_date", background: true },
+    );
+
+  await db
+    .collection("subscription_orders")
+    .createIndex(
+      { status: 1, paidAt: -1 },
+      { name: "orders_status_paiddate", background: true },
+    );
+
+  await db
+    .collection("subscription_orders")
+    .createIndex(
+      { createdAt: -1 },
+      { name: "orders_date", background: true },
     );
 
   /* ─────────────────────────────────────────────
@@ -200,6 +241,8 @@ async function createIndexes() {
     "user_playlists",
     "stream_tokens",
     "default_channels",
+    "user_sessions",
+    "subscription_orders",
   ];
 
   for (const col of collections) {

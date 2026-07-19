@@ -1,8 +1,39 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import { buildSearchQuery } from "../utils/search";
-import { signThumbnailUrl, verifyThumbnailToken } from "../utils/thumbnailToken";
+import {
+  signThumbnailUrl,
+  verifyThumbnailToken,
+} from "../utils/thumbnailToken";
 import telegramService from "../services/telegram";
+
+// ── Cursor helpers ────────────
+
+interface MergeCursor {
+  s: string | null;
+  sId: string | null;
+  b: string | null;
+  bId: string | null;
+}
+
+function encodeCursor(c: MergeCursor): string {
+  return Buffer.from(JSON.stringify(c)).toString("base64");
+}
+
+function decodeCursor(raw: string): MergeCursor | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return {
+      s: parsed.s ?? null,
+      sId: parsed.sId ?? null,
+      b: parsed.b ?? null,
+      bId: parsed.bId ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export const getSongs = async (
   req: Request,
@@ -12,7 +43,14 @@ export const getSongs = async (
   try {
     const userId = (req as any).user.id;
     const userIdStr = userId.toString();
-    const { page = 1, limit = 50, search, sortBy, channelUsername } = req.query;
+    const {
+      page = 1,
+      limit = 50,
+      search,
+      sortBy,
+      channelUsername,
+      cursor,
+    } = req.query;
     const db = mongoose.connection.db;
     const pageNum = Math.max(1, parseInt(page as string));
     const limitNum = Math.min(200, parseInt(limit as string));
@@ -95,55 +133,125 @@ export const getSongs = async (
       });
     }
 
-    const fetchLimit = skip + limitNum;
+    const rawCursor =
+      typeof cursor === "string" && cursor.trim() ? decodeCursor(cursor) : null;
 
-    const [songDocs, botDocs, songsTotal, botTotal] = await Promise.all([
+    if (!rawCursor && pageNum > 1) {
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "Pagination beyond page 1 for this listing requires the 'cursor' from the previous response.",
+      });
+    }
+
+    const songFilter: Record<string, any> = { ...query };
+    if (rawCursor?.s) {
+      songFilter.$or = [
+        { messageDate: { $lt: new Date(rawCursor.s) } },
+        {
+          messageDate: new Date(rawCursor.s),
+          _id: { $lt: new mongoose.Types.ObjectId(rawCursor.sId!) },
+        },
+      ];
+    }
+
+    const botFilter: Record<string, any> = { userId: userIdStr };
+    if (rawCursor?.b) {
+      botFilter.$or = [
+        { receivedAt: { $lt: new Date(rawCursor.b) } },
+        {
+          receivedAt: new Date(rawCursor.b),
+          _id: { $lt: new mongoose.Types.ObjectId(rawCursor.bId!) },
+        },
+      ];
+    }
+
+    const windowSize = limitNum + 1;
+
+    const [songWindow, botWindow, songsTotal, botTotal] = await Promise.all([
       db
         .collection("songs")
-        .find(query)
-        .sort({ messageDate: -1 })
-        .limit(fetchLimit)
+        .find(songFilter)
+        .sort({ messageDate: -1, _id: -1 })
+        .limit(windowSize)
         .toArray(),
       db
         .collection("bot_songs")
-        .find({ userId: userIdStr })
-        .sort({ receivedAt: -1 })
-        .limit(fetchLimit)
+        .find(botFilter)
+        .sort({ receivedAt: -1, _id: -1 })
+        .limit(windowSize)
         .toArray(),
       db.collection("songs").countDocuments(query),
       db.collection("bot_songs").countDocuments({ userId: userIdStr }),
     ]);
 
-    const combined = [
-      ...songDocs.map((s) => ({ ...s, _sortDate: s.messageDate })),
-      ...botDocs.map((s) => ({
-        _id: s._id,
-        channelDbId: s._id.toString(),
-        channelUsername: s.channelUsername,
-        channelName: "Bot Inbox",
-        title: s.title,
-        artist: s.artist,
-        duration: s.duration,
-        fileId: s.fileId,
-        fileSize: s.fileSize,
-        mimeType: s.mimeType,
-        thumbnail: s.thumbnail,
-        messageId: s.messageId,
-        _sortDate: s.receivedAt,
-      })),
-    ];
+    const normalizedSongs = songWindow.map((s) => ({
+      ...s,
+      _sortDate: s.messageDate,
+    }));
+    const normalizedBot = botWindow.map((s) => ({
+      _id: s._id,
+      channelDbId: s._id.toString(),
+      channelUsername: s.channelUsername,
+      channelName: "Bot Inbox",
+      title: s.title,
+      artist: s.artist,
+      duration: s.duration,
+      fileId: s.fileId,
+      fileSize: s.fileSize,
+      mimeType: s.mimeType,
+      thumbnail: s.thumbnail,
+      messageId: s.messageId,
+      _sortDate: s.receivedAt,
+    }));
 
-    combined.sort(
-      (a, b) =>
-        new Date(b._sortDate).getTime() - new Date(a._sortDate).getTime(),
-    );
+    let i = 0;
+    let j = 0;
+    const pageItems: any[] = [];
+    while (
+      pageItems.length < limitNum &&
+      (i < normalizedSongs.length || j < normalizedBot.length)
+    ) {
+      const a = normalizedSongs[i];
+      const b = normalizedBot[j];
+      let takeFromSongs: boolean;
+      if (a === undefined) takeFromSongs = false;
+      else if (b === undefined) takeFromSongs = true;
+      else
+        takeFromSongs =
+          new Date(a._sortDate).getTime() >= new Date(b._sortDate).getTime();
 
-    const songs = combined
-      .slice(skip, skip + limitNum)
-      .map(({ _sortDate, ...rest }: any) => ({
-        ...rest,
-        thumbnail: signThumbnailUrl(rest._id.toString()),
-      }));
+      if (takeFromSongs) {
+        pageItems.push(a);
+        i++;
+      } else {
+        pageItems.push(b);
+        j++;
+      }
+    }
+
+    const hasMore = i < normalizedSongs.length || j < normalizedBot.length;
+    const lastSong = i > 0 ? normalizedSongs[i - 1] : null;
+    const lastBot = j > 0 ? normalizedBot[j - 1] : null;
+
+    const nextCursor = hasMore
+      ? encodeCursor({
+          s: lastSong
+            ? new Date(lastSong._sortDate).toISOString()
+            : (rawCursor?.s ?? null),
+          sId: lastSong ? lastSong._id.toString() : (rawCursor?.sId ?? null),
+          b: lastBot
+            ? new Date(lastBot._sortDate).toISOString()
+            : (rawCursor?.b ?? null),
+          bId: lastBot ? lastBot._id.toString() : (rawCursor?.bId ?? null),
+        })
+      : null;
+
+    const songs = pageItems.map(({ _sortDate, ...rest }: any) => ({
+      ...rest,
+      thumbnail: signThumbnailUrl(rest._id.toString()),
+    }));
 
     const total = songsTotal + botTotal;
     const totalPages = Math.ceil(total / limitNum);
@@ -154,7 +262,8 @@ export const getSongs = async (
       total,
       page: pageNum,
       totalPages,
-      hasMore: pageNum < totalPages,
+      hasMore,
+      nextCursor,
     });
   } catch (error) {
     next(error);
