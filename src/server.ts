@@ -117,7 +117,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`🌍 Mode: ${process.env.NODE_ENV || "development"}`);
   console.log(`❤️  Health: http://localhost:${PORT}/health`);
@@ -128,5 +128,72 @@ process.on("unhandledRejection", (err: any) => {
   console.error(`❌ Unhandled Rejection: ${err.message}`);
   process.exit(1);
 });
+
+// ── Graceful Shutdown ────────────────────────────────────────────
+let isShuttingDown = false;
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+async function gracefulShutdown(signal: string) {
+  if (isShuttingDown) {
+    console.log(`⚠️  ${signal} received again — shutdown already in progress`);
+    return;
+  }
+  isShuttingDown = true;
+
+  console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
+
+  const forceExitTimer = setTimeout(() => {
+    console.error(
+      `⏱️  Shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms — forcing exit`,
+    );
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceExitTimer.unref();
+
+  try {
+    console.log("🔌 Closing HTTP server (no new requests accepted)...");
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+    console.log("✅ HTTP server closed");
+
+    console.log("🤖 Stopping Telegram bot polling...");
+    try {
+      await telegramBot.stopPolling();
+      console.log("✅ Telegram bot polling stopped");
+    } catch (e: any) {
+      console.error("⚠️  Failed to stop Telegram bot polling:", e.message);
+    }
+
+    console.log("📡 Disconnecting Telegram MTProto client...");
+    try {
+      if (telegramService.isConnected()) {
+        await telegramService.disconnect();
+      }
+      console.log("✅ Telegram MTProto client disconnected");
+    } catch (e: any) {
+      console.error("⚠️  Failed to disconnect Telegram client:", e.message);
+    }
+
+    console.log("🍃 Disconnecting MongoDB...");
+    try {
+      await mongoose.disconnect();
+      console.log("✅ MongoDB disconnected");
+    } catch (e: any) {
+      console.error("⚠️  Failed to disconnect MongoDB:", e.message);
+    }
+
+    clearTimeout(forceExitTimer);
+    console.log("👋 Graceful shutdown complete.");
+    process.exit(0);
+  } catch (err: any) {
+    console.error("❌ Error during graceful shutdown:", err.message);
+    clearTimeout(forceExitTimer);
+    process.exit(1);
+  }
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 export default app;
