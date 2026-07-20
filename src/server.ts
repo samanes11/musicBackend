@@ -15,6 +15,8 @@ const app = express();
 // اتصال به MongoDB
 connectDB();
 
+app.set("trust proxy", 2);
+
 // Security
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 

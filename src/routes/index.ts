@@ -83,15 +83,16 @@ import {
   recordPlay,
 } from "../controllers/playHistoryController";
 import { requirePremium } from "../middleware/requirePremium";
+import { authLimiter } from "../middleware/rateLimiters";
 
 const router = Router();
 
 // ── Auth ────────────────────────────────────────────────────────
-router.post("/auth/refresh", refreshToken);
+router.post("/auth/refresh", authLimiter, refreshToken);
 router.get("/auth/me", authenticate, getMe);
-router.post("/auth/telegram", telegramAuth);
-router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
-router.post("/auth/telegram/session", createTelegramSession);
+router.post("/auth/telegram", authLimiter, telegramAuth);
+router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth); 
+router.post("/auth/telegram/session", authLimiter, createTelegramSession);
 
 router.put(
   "/auth/profile",
