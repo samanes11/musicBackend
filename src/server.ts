@@ -12,7 +12,7 @@ import telegramService from "./services/telegram";
 
 const app = express();
 
-// اتصال به MongoDB
+// MongoDB
 connectDB();
 
 app.set("trust proxy", 2);
