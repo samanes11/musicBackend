@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import telegramService from "../services/telegram";
-import { buildSearchFields } from "../utils/search";
+import { buildArtistSearchFields, buildSearchFields, buildTitleSearchFields } from "../utils/search";
 import { normalizeChannelInput } from "../utils/channelInput";
 
 // ── GET /api/channels ──────────────────────────────────────────
@@ -50,11 +50,13 @@ export const getUserChannels = async (req, res, next) => {
 export const addChannel = async (req, res, next) => {
   try {
     const userId = (req as any).user.id.toString();
-    const { channelUsername, channelName } = req.body;
-    if (!channelUsername || !channelName) {
+    const { channelUsername } = req.body;
+    let channelName = (req.body.channelName || "").toString().trim();
+
+    if (!channelUsername) {
       return res.status(400).json({
         success: false,
-        msg: "channelUsername and channelName required",
+        msg: "channelUsername required",
       });
     }
 
@@ -81,6 +83,10 @@ export const addChannel = async (req, res, next) => {
     let needsSync = false;
 
     if (!channel) {
+      if (!channelName) {
+        channelName =
+          (await telegramService.getChannelName(username, userId)) || username;
+      }
       const photoUrl = await telegramService.getChannelPhoto(username, userId);
       const result = await db.collection("channels").insertOne({
         channelUsername: username,
@@ -98,6 +104,8 @@ export const addChannel = async (req, res, next) => {
         songsCount: 0,
       };
       needsSync = true;
+    } else if (!channelName) {
+      channelName = channel.channelName;
     }
 
     await db.collection("user_channels").insertOne({
@@ -258,7 +266,6 @@ export const getSyncStatus = async (req, res, next) => {
 };
 
 // ── GET /api/channels/:id/info ──────────────────────────────────
-// عمومیه — نیازی به join بودن کاربر نداره، فقط پروفایل عمومی چنل رو می‌ده
 export const getChannelInfo = async (req, res, next) => {
   try {
     const { username } = req.params;
@@ -322,6 +329,10 @@ export async function _syncInBackground(
           file.title,
           file.artist,
         );
+        const { searchWords: titleWords, searchPrefixes: titlePrefixes } =
+          buildTitleSearchFields(file.title);
+        const { searchWords: artistWords, searchPrefixes: artistPrefixes } =
+          buildArtistSearchFields(file.artist);
         return {
           updateOne: {
             filter: { channelUsername: username, messageId: file.messageId },
@@ -339,6 +350,10 @@ export async function _syncInBackground(
                 thumbnail: file.thumbnail || null,
                 searchWords,
                 searchPrefixes,
+                titleWords,
+                titlePrefixes,
+                artistWords,
+                artistPrefixes,
               },
             },
             upsert: true,
