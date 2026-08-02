@@ -159,6 +159,6 @@ async function _downloadThumbnailBg(
       .updateOne(
         { _id: new mongoose.Types.ObjectId(songId) },
         { $set: { thumbnail: thumbnail || null } },
-      );
+      ); 
   } catch {}
 }
