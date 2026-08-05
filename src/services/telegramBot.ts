@@ -10,6 +10,7 @@ import {
   buildTitleSearchFields,
 } from "../utils/search";
 import { logger } from "../utils/logger";
+import { authenticateTelegramUser } from "./telegramAuthCore";
 
 function escapeMarkdown(text?: string | null): string {
   if (!text) return "";
@@ -69,14 +70,12 @@ bot.onText(/^\/start(?:\s+(.+))?$/, async (msg, match) => {
   const db = mongoose.connection.db;
 
   try {
-    const authToken = `${BOT_AUTH_SECRET}_${telegramId}`;
-    const res = await axios.post(`${API_BASE}/auth/telegram`, {
+    const { isNew, user: userDoc } = await authenticateTelegramUser({
       telegramId,
       telegramUsername,
       name,
-      authToken,
     });
-    const { isNew, user } = res.data.data;
+    const user = userDoc.toPublicJSON();
 
     if (payload && payload.startsWith("auth_")) {
       const sessionId = payload.replace("auth_", "");
@@ -119,11 +118,12 @@ bot.onText(/^\/start(?:\s+(.+))?$/, async (msg, match) => {
       `${authText}\n\n🎧 *Telody*\n\nWhat would you like to do?`,
       { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() },
     );
-  } catch (err) {
+  } catch (err: any) {
     logger.error("Telegram auth failed", {
       telegramId,
       telegramUsername,
-      error: err.response?.data || err.message,
+      error: err?.message || String(err),
+      stack: err?.stack,
     });
     await bot.sendMessage(
       chatId,

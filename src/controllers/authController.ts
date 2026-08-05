@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import mongoose from "mongoose";
 import bot from "../services/telegramBot";
+import { authenticateTelegramUser } from "../services/telegramAuthCore";
 
 const MAX_DEVICES = 3;
 function hashToken(token: string): string {
@@ -26,45 +27,29 @@ export const telegramAuth = async (
         .status(401)
         .json({ success: false, message: "Invalid auth token" });
     }
-    if (!telegramId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "telegramId required" });
-    }
 
-    let user = await User.findOne({ telegramId: telegramId.toString() });
-    let isNew = false;
-
-    if (!user) {
-      user = await User.create({
-        telegramId: telegramId.toString(),
-        telegramUsername: telegramUsername || null,
-        name: name || telegramUsername || "User",
-        isActive: true,
-        profileComplete: false,
-        role: "user",
-      });
-      isNew = true;
-    } else {
-      user.telegramUsername = telegramUsername || user.telegramUsername;
-      if (!user.isActive) {
-        return res
-          .status(401)
-          .json({ success: false, message: "Account inactive" });
-      }
-    }
-
-    user.lastLogin = new Date();
-    await user.save();
+    const { user, isNew } = await authenticateTelegramUser({
+      telegramId,
+      telegramUsername,
+      name,
+    });
 
     res.status(isNew ? 201 : 200).json({
       success: true,
       message: isNew ? "Registered successfully" : "Login successful",
       data: { user: user.toPublicJSON(), isNew },
     });
-
-    if (isNew) applyDefaultChannelsForNewUser(user._id).catch(console.error);
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "Account inactive") {
+      return res
+        .status(401)
+        .json({ success: false, message: "Account inactive" });
+    }
+    if (error.message === "telegramId required") {
+      return res
+        .status(400)
+        .json({ success: false, message: "telegramId required" });
+    }
     next(error);
   }
 };
