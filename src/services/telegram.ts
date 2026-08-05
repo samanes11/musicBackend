@@ -106,17 +106,42 @@ class TelegramService {
     }
   }
 
+  private extractStrippedThumbnail(doc: any): string | null {
+    try {
+      if (!doc.thumbs || doc.thumbs.length === 0) return null;
+      const stripped = doc.thumbs.find(
+        (t: any) => t.className === "PhotoStrippedSize",
+      );
+      if (!stripped || typeof utils.strippedPhotoToJpg !== "function") {
+        return null;
+      }
+      const jpg = utils.strippedPhotoToJpg(stripped.bytes);
+      return `data:image/jpeg;base64,${jpg.toString("base64")}`;
+    } catch {
+      return null;
+    }
+  }
+
   private async getDocumentThumbnail(
     doc: any,
     channelUsername: string,
     messageId: number,
+    requestedBy?: {
+      telegramId?: string | null;
+      telegramUsername?: string | null;
+      userId?: string | null;
+    },
   ): Promise<string | null> {
+    const logMeta = {
+      telegramId: requestedBy?.telegramId ?? null,
+      telegramUsername: requestedBy?.telegramUsername ?? null,
+      userId: requestedBy?.userId ?? null,
+      channelUsername,
+      path: `@${channelUsername} · msg:${messageId}`,
+    };
     try {
       if (!doc.thumbs || doc.thumbs.length === 0) {
-        logger.warn("Thumbnail: no thumbs on document", {
-          telegramUsername: channelUsername,
-          path: `msg:${messageId}`,
-        });
+        logger.warn("Thumbnail: no thumbs on document", logMeta);
         return null;
       }
 
@@ -138,8 +163,7 @@ class TelegramService {
             return `data:image/jpeg;base64,${jpg.toString("base64")}`;
           } catch (e: any) {
             logger.warn("Thumbnail: strippedPhotoToJpg threw", {
-              telegramUsername: channelUsername,
-              path: `msg:${messageId}`,
+              ...logMeta,
               error: e.message,
             });
             return null;
@@ -169,24 +193,20 @@ class TelegramService {
           return `data:image/jpeg;base64,${buffer.toString("base64")}`;
         }
         logger.warn("Thumbnail: downloadFile returned empty buffer", {
-          telegramUsername: channelUsername,
-          path: `msg:${messageId}`,
+          ...logMeta,
           thumbType: bestThumb.className,
         });
       } catch (error: any) {
         logger.warn("Thumbnail: downloadFile threw", {
-          telegramUsername: channelUsername,
-          path: `msg:${messageId}`,
+          ...logMeta,
           thumbType: bestThumb.className,
           error: error.message,
         });
       }
-
       return null;
     } catch (error: any) {
       logger.error("Thumbnail: unexpected error in getDocumentThumbnail", {
-        telegramUsername: channelUsername,
-        path: `msg:${messageId}`,
+        ...logMeta,
         error: error.message,
       });
       return null;
@@ -277,7 +297,7 @@ class TelegramService {
             mimeType: doc.mimeType || "audio/mpeg",
             messageDate: msg.date,
             fileUrl: `https://t.me/${username}/${msg.id}`,
-            thumbnail: null,
+            thumbnail: this.extractStrippedThumbnail(doc),
           });
         }
 
@@ -408,6 +428,11 @@ class TelegramService {
     channelUsername: string,
     messageId: number,
     userId?: any,
+    requestedBy?: {
+      telegramId?: string | null;
+      telegramUsername?: string | null;
+      userId?: string | null;
+    },
   ): Promise<string | null> {
     try {
       await this.initialize(userId);
@@ -418,36 +443,54 @@ class TelegramService {
       });
       if (!messages[0] || !messages[0].media) {
         logger.warn("Thumbnail: message or media missing", {
-          telegramUsername: username,
-          path: `msg:${messageId}`,
+          telegramId: requestedBy?.telegramId ?? null,
+          telegramUsername: requestedBy?.telegramUsername ?? null,
+          userId: requestedBy?.userId ?? null,
+          channelUsername: username,
+          path: `@${username} · msg:${messageId}`,
         });
         return null;
       }
       const doc = (messages[0].media as any).document;
       if (!doc) {
         logger.warn("Thumbnail: media has no document", {
-          telegramUsername: username,
-          path: `msg:${messageId}`,
+          telegramId: requestedBy?.telegramId ?? null,
+          telegramUsername: requestedBy?.telegramUsername ?? null,
+          userId: requestedBy?.userId ?? null,
+          channelUsername: username,
+          path: `@${username} · msg:${messageId}`,
         });
         return null;
       }
-      return await this.getDocumentThumbnail(doc, username, messageId);
+      return await this.getDocumentThumbnail(
+        doc,
+        username,
+        messageId,
+        requestedBy,
+      );
     } catch (error: any) {
       if (error?.errorMessage === "CHANNEL_PRIVATE") {
         logger.warn("Thumbnail: channel private/inaccessible", {
-          telegramUsername: channelUsername,
-          path: `msg:${messageId}`,
+          telegramId: requestedBy?.telegramId ?? null,
+          telegramUsername: requestedBy?.telegramUsername ?? null,
+          userId: requestedBy?.userId ?? null,
+          channelUsername,
+          path: `@${channelUsername} · msg:${messageId}`,
         });
       } else {
         logger.error("Thumbnail: downloadSongThumbnail failed", {
-          telegramUsername: channelUsername,
-          path: `msg:${messageId}`,
+          telegramId: requestedBy?.telegramId ?? null,
+          telegramUsername: requestedBy?.telegramUsername ?? null,
+          userId: requestedBy?.userId ?? null,
+          channelUsername,
+          path: `@${channelUsername} · msg:${messageId}`,
           error: error.message,
         });
       }
       return null;
     }
   }
+
   async disconnect(): Promise<void> {
     if (this.client) {
       try {

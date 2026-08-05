@@ -258,7 +258,7 @@ export const getPlaylistSongs = async (
         .toArray(),
     ]);
 
-    const songMap = new Map(songs.map((s) => [s._id.toString(), s]));
+    const songMap = new Map(songs.map((s) => [s._id.toString(), s])); 
 
     for (const bs of botSongs) {
       songMap.set(bs._id.toString(), {
@@ -268,10 +268,10 @@ export const getPlaylistSongs = async (
         channelName: "Bot Inbox",
         title: bs.title,
         artist: bs.artist,
-        duration: bs.duration,
+        duration: bs.duration,  
         fileId: bs.fileId,
         fileSize: bs.fileSize,
-        thumbnail: bs.thumbnail,
+        thumbnail: bs.thumbnail, 
         messageId: bs.messageId,
       });
     }
@@ -281,8 +281,7 @@ export const getPlaylistSongs = async (
       .filter(Boolean)
       .map((s: any) => ({
         ...s,
-        thumbnail: signThumbnailUrl(s._id.toString(), userId),
-      }));
+        thumbnail: s.thumbnail || signThumbnailUrl(s._id.toString(), userId),}));
 
     res.json({
       success: true,
