@@ -51,6 +51,7 @@ import {
   updatePlaylistVisibility,
   getPlaylistsContainingSongs,
   togglePlaylistLike,
+  getLikedPlaylists,
 } from "../controllers/playlistsController";
 import { streamSong } from "../controllers/streamController";
 import { adminAuth } from "../middleware/adminAuth";
@@ -206,6 +207,7 @@ router.post("/favorites/toggle", authenticate, toggleFavorite);
 // ── Playlists ───────────────────────────────────────────────────
 router.get("/playlists", authenticate, getPlaylists);
 router.get("/playlists/containing", authenticate, getPlaylistsContainingSongs);
+router.get("/playlists/liked", authenticate, getLikedPlaylists);
 router.post("/playlists", authenticate, requirePremium, createPlaylist);
 router.put("/playlists/:id", authenticate, updatePlaylist);
 router.delete("/playlists/:id", authenticate, deletePlaylist);

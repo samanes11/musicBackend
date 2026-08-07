@@ -34,6 +34,38 @@ export const getPlaylists = async (
   }
 };
 
+// ── GET /api/playlists/liked ───────────────────────────────────
+export const getLikedPlaylists = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const db = mongoose.connection.db;
+
+    const playlists = await db
+      .collection("user_playlists")
+      .aggregate([
+        { $match: { isPublic: true, likedBy: userId } },
+        { $sort: { updatedAt: -1 } },
+        {
+          $addFields: {
+            songsCount: { $size: { $ifNull: ["$songIds", []] } },
+            isOwner: { $eq: ["$ownerId", userId] },
+            likesCount: { $size: { $ifNull: ["$likedBy", []] } },
+            isLiked: true,
+          },
+        },
+      ])
+      .toArray();
+
+    res.json({ success: true, data: playlists });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ── POST /api/playlists ────────────────────────────────────────
 export const createPlaylist = async (
   req: Request,
