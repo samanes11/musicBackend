@@ -52,6 +52,7 @@ export const getUserPublicProfile = async (
 ) => {
   try {
     const { id } = req.params;
+    const userId = (req as any).user?.id?.toString() ?? "";
     const db = mongoose.connection.db;
     let objId: mongoose.Types.ObjectId;
     try {
@@ -97,7 +98,7 @@ export const getUserPublicProfile = async (
       db
         .collection("user_playlists")
         .find({ ownerId: userIdStr, isPublic: true })
-        .project({ name: 1, songIds: 1 })
+        .project({ name: 1, songIds: 1, likedBy: 1 })
         .toArray(),
     ]);
 
@@ -143,6 +144,8 @@ export const getUserPublicProfile = async (
           _id: p._id,
           name: p.name,
           songsCount: (p.songIds || []).length,
+          likesCount: (p.likedBy || []).length,
+          isLiked: (p.likedBy || []).includes(userId),
         })),
       },
     });
@@ -301,6 +304,7 @@ export const searchPublicPlaylists = async (
   next: NextFunction,
 ) => {
   try {
+    const userId = (req as any).user?.id?.toString() ?? "";
     const q = ((req.query.q as string) || "").trim();
     const db = mongoose.connection.db;
 
@@ -314,7 +318,11 @@ export const searchPublicPlaylists = async (
         { $sort: { updatedAt: -1 } },
         { $limit: 50 },
         {
-          $addFields: { songsCount: { $size: { $ifNull: ["$songIds", []] } } },
+          $addFields: {
+            songsCount: { $size: { $ifNull: ["$songIds", []] } },
+            likesCount: { $size: { $ifNull: ["$likedBy", []] } },
+            isLiked: { $in: [userId, { $ifNull: ["$likedBy", []] }] },
+          },
         },
       ])
       .toArray();

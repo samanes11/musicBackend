@@ -21,6 +21,8 @@ export const getPlaylists = async (
           $addFields: {
             songsCount: { $size: { $ifNull: ["$songIds", []] } },
             isOwner: { $eq: ["$ownerId", userId] },
+            likesCount: { $size: { $ifNull: ["$likedBy", []] } },
+            isLiked: { $in: [userId, { $ifNull: ["$likedBy", []] }] },
           },
         },
       ])
@@ -54,7 +56,7 @@ export const createPlaylist = async (
         .status(400)
         .json({ success: false, msg: "Playlist name already exists" });
 
-     const newPlaylist = {
+    const newPlaylist = {
       ownerId: userId,
       userIds: [userId],
       name,
@@ -201,7 +203,7 @@ export const getPlaylistSongs = async (
     const limitNum = Math.min(200, parseInt(limit as string));
     const db = mongoose.connection.db;
 
-   const playlist = await db.collection("user_playlists").findOne({
+    const playlist = await db.collection("user_playlists").findOne({
       _id: new mongoose.Types.ObjectId(playlistId),
       $or: [{ userIds: userId }, { isPublic: true }],
     });
@@ -258,7 +260,7 @@ export const getPlaylistSongs = async (
         .toArray(),
     ]);
 
-    const songMap = new Map(songs.map((s) => [s._id.toString(), s])); 
+    const songMap = new Map(songs.map((s) => [s._id.toString(), s]));
 
     for (const bs of botSongs) {
       songMap.set(bs._id.toString(), {
@@ -268,10 +270,10 @@ export const getPlaylistSongs = async (
         channelName: "Bot Inbox",
         title: bs.title,
         artist: bs.artist,
-        duration: bs.duration,  
+        duration: bs.duration,
         fileId: bs.fileId,
         fileSize: bs.fileSize,
-        thumbnail: bs.thumbnail, 
+        thumbnail: bs.thumbnail,
         messageId: bs.messageId,
       });
     }
@@ -281,7 +283,8 @@ export const getPlaylistSongs = async (
       .filter(Boolean)
       .map((s: any) => ({
         ...s,
-        thumbnail: s.thumbnail || signThumbnailUrl(s._id.toString(), userId),}));
+        thumbnail: s.thumbnail || signThumbnailUrl(s._id.toString(), userId),
+      }));
 
     res.json({
       success: true,
@@ -291,6 +294,11 @@ export const getPlaylistSongs = async (
         name: playlist.name,
         songsCount: realCount,
         isOwner: playlist.ownerId === userId,
+        isPublic: playlist.isPublic === true,
+        likesCount: (playlist.likedBy as string[] | undefined)?.length ?? 0,
+        isLiked: ((playlist.likedBy as string[] | undefined) ?? []).includes(
+          userId,
+        ),
       },
       total: realCount,
       page: pageNum,
@@ -461,7 +469,7 @@ export const getPlaylistUsers = async (
     const playlistId = req.params.id;
     const db = mongoose.connection.db;
 
-   const playlist = await db.collection("user_playlists").findOne({
+    const playlist = await db.collection("user_playlists").findOne({
       _id: new mongoose.Types.ObjectId(playlistId),
       $or: [{ userIds: userId }, { isPublic: true }],
     });
@@ -678,7 +686,9 @@ export const updatePlaylistVisibility = async (
         .json({ success: false, msg: "Invalid playlist id" });
     }
 
-    const playlist = await db.collection("user_playlists").findOne({ _id: objId });
+    const playlist = await db
+      .collection("user_playlists")
+      .findOne({ _id: objId });
     if (!playlist)
       return res
         .status(404)
@@ -694,6 +704,62 @@ export const updatePlaylistVisibility = async (
       .updateOne({ _id: objId }, { $set: { isPublic, updatedAt: new Date() } });
 
     res.json({ success: true, msg: "Visibility updated", isPublic });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── POST /api/playlists/:id/like ───────────────────────────────
+export const togglePlaylistLike = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = (req as any).user.id.toString();
+    const playlistId = req.params.id;
+    const db = mongoose.connection.db;
+
+    let objId: mongoose.Types.ObjectId;
+    try {
+      objId = new mongoose.Types.ObjectId(playlistId);
+    } catch {
+      return res
+        .status(400)
+        .json({ success: false, msg: "Invalid playlist id" });
+    }
+
+    const playlist = await db
+      .collection("user_playlists")
+      .findOne({ _id: objId });
+    if (!playlist)
+      return res
+        .status(404)
+        .json({ success: false, msg: "Playlist not found" });
+    if (!playlist.isPublic)
+      return res
+        .status(400)
+        .json({ success: false, msg: "Only public playlists can be liked" });
+
+    const alreadyLiked =
+      (playlist.likedBy as string[] | undefined)?.includes(userId) ?? false;
+
+    if (alreadyLiked) {
+      await db
+        .collection("user_playlists")
+        .updateOne({ _id: objId }, { $pull: { likedBy: userId } as any });
+    } else {
+      await db
+        .collection("user_playlists")
+        .updateOne({ _id: objId }, { $addToSet: { likedBy: userId } });
+    }
+
+    const updated = await db
+      .collection("user_playlists")
+      .findOne({ _id: objId }, { projection: { likedBy: 1 } });
+    const likesCount = (updated?.likedBy as string[] | undefined)?.length ?? 0;
+
+    res.json({ success: true, liked: !alreadyLiked, likesCount });
   } catch (error) {
     next(error);
   }

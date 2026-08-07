@@ -50,6 +50,7 @@ import {
   searchUsers,
   updatePlaylistVisibility,
   getPlaylistsContainingSongs,
+  togglePlaylistLike,
 } from "../controllers/playlistsController";
 import { streamSong } from "../controllers/streamController";
 import { adminAuth } from "../middleware/adminAuth";
@@ -87,7 +88,14 @@ import {
 } from "../controllers/playHistoryController";
 import { requirePremium } from "../middleware/requirePremium";
 import { authLimiter } from "../middleware/rateLimiters";
-import { getUserPublicProfile, searchArtists, searchChannelsGlobal, searchPublicPlaylists, searchSongsByTitle, searchUsersGlobal } from "../controllers/searchController";
+import {
+  getUserPublicProfile,
+  searchArtists,
+  searchChannelsGlobal,
+  searchPublicPlaylists,
+  searchSongsByTitle,
+  searchUsersGlobal,
+} from "../controllers/searchController";
 
 const router = Router();
 
@@ -95,7 +103,7 @@ const router = Router();
 router.post("/auth/refresh", authLimiter, refreshToken);
 router.get("/auth/me", authenticate, getMe);
 router.post("/auth/telegram", authLimiter, telegramAuth);
-router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth); 
+router.get("/auth/telegram/poll/:sessionId", pollTelegramAuth);
 router.post("/auth/telegram/session", authLimiter, createTelegramSession);
 
 router.put(
@@ -214,9 +222,24 @@ router.delete(
   removeSongFromPlaylist,
 );
 router.post("/playlists/:id/reorder", authenticate, reorderPlaylist);
-router.patch("/playlists/:id/visibility", authenticate, updatePlaylistVisibility);router.get("/playlists/:id/users", authenticate, getPlaylistUsers);
-router.post("/playlists/:id/users", authenticate, requirePremium, addUserToPlaylist);
-router.delete("/playlists/:id/users/:targetUserId", authenticate, removeUserFromPlaylist);
+router.patch(
+  "/playlists/:id/visibility",
+  authenticate,
+  updatePlaylistVisibility,
+);
+router.post("/playlists/:id/like", authenticate, togglePlaylistLike);
+router.get("/playlists/:id/users", authenticate, getPlaylistUsers);
+router.post(
+  "/playlists/:id/users",
+  authenticate,
+  requirePremium,
+  addUserToPlaylist,
+);
+router.delete(
+  "/playlists/:id/users/:targetUserId",
+  authenticate,
+  removeUserFromPlaylist,
+);
 router.get("/users/search", authenticate, searchUsers);
 
 // ── Stream ──────────────────────────────────────────────────────
