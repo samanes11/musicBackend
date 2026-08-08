@@ -71,3 +71,56 @@ export const getMessages = async (
     next(error);
   }
 };
+
+// ── POST /api/public/contact (بدون نیاز به لاگین — از لندینگ‌پیج) ──
+export const sendPublicMessage = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { name, telegramUsername, telegramId, message } = req.body;
+
+    if (!message || !message.toString().trim()) {
+      return res
+        .status(400)
+        .json({ success: false, msg: "Message is required" });
+    }
+
+    const cleanUsername = telegramUsername
+      ? telegramUsername.toString().trim().replace("@", "")
+      : null;
+    const cleanTelegramId = telegramId ? telegramId.toString().trim() : null;
+
+    if (!cleanUsername && !cleanTelegramId) {
+      return res.status(400).json({
+        success: false,
+        msg: "telegramUsername or telegramId is required",
+      });
+    }
+
+    const db = mongoose.connection.db;
+
+    await db.collection("contact_messages").insertOne({
+      userId: null,
+      telegramId: cleanTelegramId,
+      telegramUsername: cleanUsername,
+      name: (name || "").toString().trim(),
+      message: message.toString().trim(),
+      source: "landing",
+      createdAt: new Date(),
+      read: false,
+    });
+
+    notifyAdminNewContactMessage({
+      name: (name || "").toString().trim(),
+      telegramUsername: cleanUsername,
+      telegramId: cleanTelegramId,
+      message: message.toString().trim(),
+    }).catch(() => {});
+
+    res.status(201).json({ success: true, msg: "Message sent" });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -13,8 +13,11 @@ import {
   refreshTelegramUsername,
   deleteAccount,
 } from "../controllers/authController";
-import { sendMessage, getMessages } from "../controllers/contactController";
-import { updateProfileValidation } from "../middleware/validators";
+import {
+  sendMessage,
+  getMessages,
+  sendPublicMessage,
+} from "../controllers/contactController";import { updateProfileValidation } from "../middleware/validators";
 import { authenticate } from "../middleware/auth";
 import {
   getUserChannels,
@@ -262,6 +265,7 @@ router.get("/search/channels", authenticate, searchChannelsGlobal);
 
 // ── Contact ─────────────────────────────────────────────────────
 router.post("/contact", authenticate, sendMessage);
+router.post("/public/contact", sendPublicMessage);
 
 // Bot
 router.post("/bot/connect/generate", authenticate, generateCode);
